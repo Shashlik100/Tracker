@@ -1,0 +1,14 @@
+[2026-03-30 18:40:48.397] [000007A8] === Logging started ===
+[2026-03-30 18:40:48.403] [000007A8] Executing: "C:\Program Files\dotnet\dotnet.exe" build C:\CodexProjects\Tracker\TrackerApp\TrackerApp.csproj -c Debug, PID: 1960, PPID: 12096
+[2026-03-30 18:40:48.406] [000007A8] IsElevated: False
+[2026-03-30 18:40:48.406] [000007A8] Is64BitProcess: True
+[2026-03-30 18:40:48.406] [000007A8] RebootPending: False
+[2026-03-30 18:40:48.406] [000007A8] ProcessorArchitecture: amd64
+[2026-03-30 18:40:48.406] [000007A8] HostArchitecture: x64
+[2026-03-30 18:40:48.406] [000007A8] SdkDirectory: 10.0.201
+[2026-03-30 18:40:48.406] [000007A8] VerifySignatures: False
+[2026-03-30 18:40:48.406] [000007A8] SDK feature band: 10.0.200
+[2026-03-30 18:40:52.251] [000007A8] Shutting down
+[2026-03-30 18:40:52.251] [000007A8] Shutdown completed.
+[2026-03-30 18:40:52.251] [000007A8] Restart required: False
+[2026-03-30 18:40:52.251] [000007A8] === Logging ended ===

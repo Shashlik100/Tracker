@@ -1,0 +1,17 @@
+[2026-03-30 09:17:03.834] [00002388] === Logging started ===
+[2026-03-30 09:17:03.841] [00002388] Executing: "C:\Program Files\dotnet\dotnet.exe" build C:\CodexProjects\Tracker\TrackerApp\TrackerApp.csproj -c Debug, PID: 9096, PPID: 3416
+[2026-03-30 09:17:03.844] [00002388] IsElevated: False
+[2026-03-30 09:17:03.844] [00002388] Is64BitProcess: True
+[2026-03-30 09:17:03.844] [00002388] RebootPending: False
+[2026-03-30 09:17:03.844] [00002388] ProcessorArchitecture: amd64
+[2026-03-30 09:17:03.844] [00002388] HostArchitecture: x64
+[2026-03-30 09:17:03.844] [00002388] SdkDirectory: 10.0.201
+[2026-03-30 09:17:03.844] [00002388] VerifySignatures: False
+[2026-03-30 09:17:03.844] [00002388] SDK feature band: 10.0.200
+[2026-03-30 09:17:05.648] [00002388] ExtractManifestAsync: Extracting 'C:\CodexProjects\Tracker\.tmp\weuwosw1.24z\microsoft.net.workloads.10.0.200.msi.x64\10.201.0\microsoft.net.workloads.10.0.200.msi.x64.10.201.0.nupkg' to 'C:\CodexProjects\Tracker\.dotnet\.dotnet\sdk-advertising\10.0.200\microsoft.net.workloads'
+[2026-03-30 09:17:05.648] [00002388] ExtractManifestAsync: Temporary extraction path: 'C:\CodexProjects\Tracker\.tmp\y0nbf0rf.crp'
+[2026-03-30 09:17:05.676] [00002388] ExtractManifestAsync: Running admin install for 'C:\CodexProjects\Tracker\.tmp\y0nbf0rf.crp\msi'.  Log file: 'C:\CodexProjects\Tracker\.tmp\Microsoft.NET.Workload_9096_20260330_091703_829_790da2b5ef199229b9b84c43010b2524-x64_AdminInstall.log'
+[2026-03-30 09:17:07.972] [00002388] Shutting down
+[2026-03-30 09:17:07.972] [00002388] Shutdown completed.
+[2026-03-30 09:17:07.972] [00002388] Restart required: False
+[2026-03-30 09:17:07.972] [00002388] === Logging ended ===
