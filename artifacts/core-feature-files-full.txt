@@ -1,0 +1,4331 @@
+﻿========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\Models.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public enum LibraryNodeType
+{
+    Generic = 0,
+    Category = 1,
+    Section = 2,
+    Book = 3,
+    Chapter = 4,
+    Verse = 5,
+    Page = 6
+}
+
+public sealed class SubjectNodeModel
+{
+    public int Id { get; init; }
+    public int? ParentId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string DisplayPath { get; init; } = string.Empty;
+    public int SortOrder { get; init; }
+    public bool HasChildren { get; init; }
+    public LibraryNodeType NodeType { get; init; } = LibraryNodeType.Generic;
+    public string SourceSystem { get; init; } = string.Empty;
+    public string SourceKey { get; init; } = string.Empty;
+}
+
+public sealed class StudyItemModel
+{
+    public int Id { get; init; }
+    public int SubjectId { get; init; }
+    public string SubjectPath { get; init; } = string.Empty;
+    public string RootCategory { get; init; } = string.Empty;
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public DateTime CreatedAt { get; init; }
+    public DateTime ModifiedAt { get; init; }
+    public DateTime DueDate { get; init; }
+    public int Level { get; init; }
+    public int TotalReviews { get; init; }
+    public int RepetitionCount { get; init; }
+    public int Lapses { get; init; }
+    public double EaseFactor { get; init; }
+    public double IntervalDays { get; init; }
+    public string LastRating { get; init; } = string.Empty;
+    public DateTime? LastReviewedAt { get; init; }
+    public List<TagModel> Tags { get; init; } = new();
+    public bool IsDue => DueDate.Date <= DateTime.Today;
+    public bool IsMastered => IntervalDays >= 30 || RepetitionCount >= 5;
+    public StudyDifficulty Difficulty => StudyDifficultyClassifier.Classify(EaseFactor, Lapses, LastRating);
+}
+
+public enum ReviewRating
+{
+    Again = 0,
+    Hard = 1,
+    Good = 2,
+    Easy = 3,
+    Perfect = 4
+}
+
+public sealed class ReviewResult
+{
+    public int NextLevel { get; init; }
+    public int NextRepetitionCount { get; init; }
+    public int NextLapses { get; init; }
+    public double NextEaseFactor { get; init; }
+    public double NextIntervalDays { get; init; }
+    public DateTime NextDueDate { get; init; }
+    public bool IsSuccessful { get; init; }
+}
+
+public sealed class SubjectCountModel
+{
+    public string Name { get; init; } = string.Empty;
+    public int Count { get; init; }
+}
+
+public sealed class ReviewTimelinePoint
+{
+    public DateTime Day { get; init; }
+    public double AverageScore { get; init; }
+    public int ReviewCount { get; init; }
+}
+
+public sealed class HeatmapDayModel
+{
+    public DateTime Day { get; init; }
+    public int ReviewCount { get; init; }
+}
+
+public sealed class TagModel
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public int UsageCount { get; init; }
+
+    public override string ToString() => Name;
+}
+
+public enum StudyDifficulty
+{
+    Any = 0,
+    Easy = 1,
+    Medium = 2,
+    Hard = 3
+}
+
+public sealed class StudySearchQuery
+{
+    public string SearchText { get; init; } = string.Empty;
+    public int? SubjectId { get; init; }
+    public int? TagId { get; init; }
+    public bool LimitToSelectedNode { get; init; }
+}
+
+public sealed class StudyReviewFilter
+{
+    public int? SubjectId { get; init; }
+    public int? TagId { get; init; }
+    public bool RestrictToSelectedNode { get; init; }
+    public bool DueOnly { get; init; } = true;
+    public bool FailedRecentlyOnly { get; init; }
+    public StudyDifficulty Difficulty { get; init; } = StudyDifficulty.Any;
+}
+
+public sealed class DashboardStats
+{
+    public int TotalItems { get; init; }
+    public int DueToday { get; init; }
+    public int CompletedToday { get; init; }
+    public int MasteredItems { get; init; }
+    public double RetentionRate { get; init; }
+    public List<SubjectCountModel> ItemsBySubject { get; init; } = new();
+    public List<SubjectCountModel> DueBySubject { get; init; } = new();
+    public List<SubjectCountModel> MasteredByCategory { get; init; } = new();
+    public List<ReviewTimelinePoint> ReviewTimeline { get; init; } = new();
+    public List<HeatmapDayModel> Heatmap { get; init; } = new();
+}
+
+public sealed class ReviewHistoryModel
+{
+    public DateTime ReviewedAt { get; init; }
+    public ReviewRating Rating { get; init; }
+    public bool WasSuccessful { get; init; }
+}
+
+public sealed class PrintableScheduleItem
+{
+    public string SubjectPath { get; init; } = string.Empty;
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public DateTime DueDate { get; init; }
+}
+
+public sealed record SefariaBookInfo(string EnglishTitle, string HebrewTitle);
+
+public sealed record TanakhBookShape(string EnglishTitle, string HebrewTitle, IReadOnlyList<int> VerseCountsByChapter);
+
+public static class StudyDifficultyClassifier
+{
+    public static StudyDifficulty Classify(double easeFactor, int lapses, string lastRating)
+    {
+        if (lapses >= 2 || easeFactor < 2.2 || lastRating is "Again" or "Hard")
+        {
+            return StudyDifficulty.Hard;
+        }
+
+        if (lapses >= 1 || easeFactor < 2.45)
+        {
+            return StudyDifficulty.Medium;
+        }
+
+        return StudyDifficulty.Easy;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AppDatabase.cs
+========================================================================================================================
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
+namespace TrackerApp;
+
+public sealed partial class AppDatabase : IDisposable
+{
+    private readonly string _connectionString;
+    private readonly string _databasePath;
+    private readonly SefariaTanakhService _sefariaApiService;
+    private List<SubjectNodeModel> _subjects = new();
+
+    public AppDatabase()
+    {
+        var dataFolder = ResolveDataFolder();
+        _databasePath = Path.Combine(dataFolder, "tracker.db");
+        _sefariaApiService = new SefariaTanakhService(Path.Combine(dataFolder, "sefaria-cache"));
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = _databasePath }.ToString();
+    }
+
+    public string DatabasePath => _databasePath;
+
+    public void Initialize()
+    {
+        try
+        {
+            InitializeCore();
+        }
+        catch (Exception exception) when (CanRecoverByRecreatingDatabase(exception))
+        {
+            RecreateDatabaseFile(exception);
+            InitializeCore();
+        }
+    }
+
+    private void InitializeCore()
+    {
+        using var connection = OpenConnection();
+        CreateBaseSchema(connection);
+        UpgradeSchema(connection);
+
+        using var transaction = connection.BeginTransaction();
+        EnsureLibrarySeed(connection, transaction);
+        NormalizeSefariaSubjectNames(connection, transaction);
+        _subjects = LoadSubjects(connection);
+        NormalizeExistingItems(connection, transaction);
+        transaction.Commit();
+
+        _subjects = LoadSubjects(connection);
+    }
+
+    private static bool CanRecoverByRecreatingDatabase(Exception exception)
+    {
+        return exception is SqliteException or IOException or UnauthorizedAccessException;
+    }
+
+    private static string ResolveDataFolder()
+    {
+        var preferredFolder = Environment.GetEnvironmentVariable("TRACKERAPP_DATA_DIR");
+        if (TryEnsureWritableFolder(preferredFolder, out var resolvedPreferred))
+        {
+            return resolvedPreferred;
+        }
+
+        var localAppDataFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TrackerApp");
+        if (TryEnsureWritableFolder(localAppDataFolder, out var resolvedLocal))
+        {
+            return resolvedLocal;
+        }
+
+        var fallbackFolder = Path.Combine(AppContext.BaseDirectory, "AppData");
+        if (TryEnsureWritableFolder(fallbackFolder, out var resolvedFallback))
+        {
+            return resolvedFallback;
+        }
+
+        throw new InvalidOperationException("Failed to locate a writable data folder for TrackerApp.");
+    }
+
+    private static bool TryEnsureWritableFolder(string? folderPath, out string resolvedFolder)
+    {
+        resolvedFolder = string.Empty;
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folderPath);
+
+            var probePath = Path.Combine(folderPath, ".write-test");
+            File.WriteAllText(probePath, DateTime.Now.ToString("O", CultureInfo.InvariantCulture));
+            File.Delete(probePath);
+
+            resolvedFolder = folderPath;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void RecreateDatabaseFile(Exception originalException)
+    {
+        try
+        {
+            SqliteConnection.ClearAllPools();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (File.Exists(_databasePath))
+            {
+                File.Delete(_databasePath);
+            }
+        }
+        catch (Exception deleteException)
+        {
+            throw new InvalidOperationException(
+                $"Failed to recreate the SQLite database at '{_databasePath}'.",
+                deleteException);
+        }
+    }
+
+    public IReadOnlyList<SubjectNodeModel> GetSubjects() => _subjects;
+
+    public IReadOnlyList<SefariaRequestLogEntry> GetSefariaRequestLog() => _sefariaApiService.GetRequestLog();
+
+    public IReadOnlyList<SubjectNodeModel> GetLeafSubjects()
+    {
+        var parents = _subjects.Where(subject => subject.ParentId.HasValue)
+            .Select(subject => subject.ParentId!.Value)
+            .ToHashSet();
+
+        return _subjects
+            .Where(subject => !parents.Contains(subject.Id))
+            .OrderBy(subject => GetSubjectPath(subject.Id))
+            .Select(subject => new SubjectNodeModel
+            {
+                Id = subject.Id,
+                ParentId = subject.ParentId,
+                Name = subject.Name,
+                DisplayPath = GetSubjectPath(subject.Id),
+                SortOrder = subject.SortOrder,
+                NodeType = subject.NodeType,
+                SourceSystem = subject.SourceSystem,
+                SourceKey = subject.SourceKey
+            })
+            .ToList();
+    }
+
+    public IReadOnlyList<SubjectNodeModel> GetAssignableSubjects()
+    {
+        return _subjects
+            .OrderBy(subject => GetSubjectPath(subject.Id))
+            .Select(subject => new SubjectNodeModel
+            {
+                Id = subject.Id,
+                ParentId = subject.ParentId,
+                Name = subject.Name,
+                DisplayPath = GetSubjectPath(subject.Id),
+                SortOrder = subject.SortOrder,
+                NodeType = subject.NodeType,
+                SourceSystem = subject.SourceSystem,
+                SourceKey = subject.SourceKey
+            })
+            .ToList();
+    }
+
+    public string GetSubjectPath(int subjectId)
+    {
+        var lookup = _subjects.ToDictionary(subject => subject.Id);
+        if (!lookup.TryGetValue(subjectId, out var current))
+        {
+            return string.Empty;
+        }
+
+        var path = new Stack<string>();
+        while (true)
+        {
+            path.Push(current.Name);
+            if (!current.ParentId.HasValue || !lookup.TryGetValue(current.ParentId.Value, out current))
+            {
+                break;
+            }
+        }
+
+        return string.Join(" > ", path);
+    }
+
+    public StudyItemModel? GetStudyItem(int itemId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems
+            WHERE Id = $itemId;
+            """;
+        command.Parameters.AddWithValue("$itemId", itemId);
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            return null;
+        }
+
+        var item = MapStudyItem(reader);
+        reader.Close();
+        AttachTagsToItems(connection, [item]);
+        return item;
+    }
+
+    public IReadOnlyList<StudyItemModel> GetStudyItemsForSubject(int? subjectId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            WITH RECURSIVE SubjectTree AS (
+                SELECT Id FROM Subjects WHERE Id = $subjectId
+                UNION ALL
+                SELECT Subjects.Id
+                FROM Subjects
+                INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
+            )
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems
+            WHERE $subjectId IS NULL OR SubjectId IN (SELECT Id FROM SubjectTree)
+            ORDER BY date(DueDate) ASC, Topic ASC;
+            """;
+        command.Parameters.AddWithValue("$subjectId", subjectId.HasValue ? subjectId.Value : DBNull.Value);
+
+        return LoadStudyItems(connection, command);
+    }
+
+    public int AddStudyItem(int subjectId, string topic, string question, string answer)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        var now = DateTime.Now;
+        command.CommandText =
+            """
+            INSERT INTO StudyItems (
+                SubjectId, Topic, Question, Answer, SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
+                TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            )
+            VALUES (
+                $subjectId, $topic, $question, $answer, $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
+                0, 0, 0, 2.5, 0, '', NULL
+            );
+            """;
+        command.Parameters.AddWithValue("$subjectId", subjectId);
+        command.Parameters.AddWithValue("$topic", topic.Trim());
+        command.Parameters.AddWithValue("$question", question.Trim());
+        command.Parameters.AddWithValue("$answer", answer.Trim());
+        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
+        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
+        command.Parameters.AddWithValue("$createdAt", FormatDate(now));
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
+        command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
+        command.ExecuteNonQuery();
+        return GetLastInsertRowId(connection, null);
+    }
+
+    public void UpdateStudyItem(int itemId, int subjectId, string topic, string question, string answer)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE StudyItems
+            SET SubjectId = $subjectId,
+                Topic = $topic,
+                Question = $question,
+                Answer = $answer,
+                SubjectPathCache = $subjectPathCache,
+                RootCategoryCache = $rootCategoryCache,
+                ModifiedAt = $modifiedAt
+            WHERE Id = $itemId;
+            """;
+        command.Parameters.AddWithValue("$itemId", itemId);
+        command.Parameters.AddWithValue("$subjectId", subjectId);
+        command.Parameters.AddWithValue("$topic", topic.Trim());
+        command.Parameters.AddWithValue("$question", question.Trim());
+        command.Parameters.AddWithValue("$answer", answer.Trim());
+        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
+        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(DateTime.Now));
+        command.ExecuteNonQuery();
+    }
+
+    public void DeleteStudyItem(int itemId)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        using (var deleteHistory = connection.CreateCommand())
+        {
+            deleteHistory.Transaction = transaction;
+            deleteHistory.CommandText = "DELETE FROM ReviewHistory WHERE StudyItemId = $itemId;";
+            deleteHistory.Parameters.AddWithValue("$itemId", itemId);
+            deleteHistory.ExecuteNonQuery();
+        }
+
+        using (var deleteItem = connection.CreateCommand())
+        {
+            deleteItem.Transaction = transaction;
+            deleteItem.CommandText = "DELETE FROM StudyItems WHERE Id = $itemId;";
+            deleteItem.Parameters.AddWithValue("$itemId", itemId);
+            deleteItem.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public StudyItemModel RateStudyItem(int itemId, ReviewRating rating)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var currentItem = LoadStudyItemForUpdate(connection, transaction, itemId);
+        var reviewedAt = DateTime.Now;
+        var result = SpacedRepetitionCalculator.ApplySm2(
+            currentItem.RepetitionCount,
+            currentItem.Lapses,
+            currentItem.EaseFactor,
+            currentItem.IntervalDays,
+            rating,
+            reviewedAt);
+
+        using (var updateCommand = connection.CreateCommand())
+        {
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                """
+                UPDATE StudyItems
+                SET DueDate = $dueDate,
+                    Level = $level,
+                    TotalReviews = TotalReviews + 1,
+                    RepetitionCount = $repetitionCount,
+                    Lapses = $lapses,
+                    EaseFactor = $easeFactor,
+                    IntervalDays = $intervalDays,
+                    LastRating = $lastRating,
+                    LastReviewedAt = $lastReviewedAt,
+                    ModifiedAt = $modifiedAt
+                WHERE Id = $itemId;
+                """;
+            updateCommand.Parameters.AddWithValue("$itemId", itemId);
+            updateCommand.Parameters.AddWithValue("$dueDate", FormatDate(result.NextDueDate));
+            updateCommand.Parameters.AddWithValue("$level", result.NextLevel);
+            updateCommand.Parameters.AddWithValue("$repetitionCount", result.NextRepetitionCount);
+            updateCommand.Parameters.AddWithValue("$lapses", result.NextLapses);
+            updateCommand.Parameters.AddWithValue("$easeFactor", result.NextEaseFactor);
+            updateCommand.Parameters.AddWithValue("$intervalDays", result.NextIntervalDays);
+            updateCommand.Parameters.AddWithValue("$lastRating", rating.ToString());
+            updateCommand.Parameters.AddWithValue("$lastReviewedAt", FormatDate(reviewedAt));
+            updateCommand.Parameters.AddWithValue("$modifiedAt", FormatDate(reviewedAt));
+            updateCommand.ExecuteNonQuery();
+        }
+
+        InsertReviewHistory(connection, transaction, itemId, currentItem, result, rating, reviewedAt);
+        transaction.Commit();
+
+        return new StudyItemModel
+        {
+            Id = currentItem.Id,
+            SubjectId = currentItem.SubjectId,
+            SubjectPath = currentItem.SubjectPath,
+            RootCategory = currentItem.RootCategory,
+            Topic = currentItem.Topic,
+            Question = currentItem.Question,
+            Answer = currentItem.Answer,
+            CreatedAt = currentItem.CreatedAt,
+            ModifiedAt = reviewedAt,
+            DueDate = result.NextDueDate,
+            Level = result.NextLevel,
+            TotalReviews = currentItem.TotalReviews + 1,
+            RepetitionCount = result.NextRepetitionCount,
+            Lapses = result.NextLapses,
+            EaseFactor = result.NextEaseFactor,
+            IntervalDays = result.NextIntervalDays,
+            LastRating = rating.ToString(),
+            LastReviewedAt = reviewedAt
+        };
+    }
+
+    public void Dispose()
+    {
+        _sefariaApiService.Dispose();
+    }
+
+    private SqliteConnection OpenConnection()
+    {
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys = ON;";
+        pragma.ExecuteNonQuery();
+
+        return connection;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Library.cs
+========================================================================================================================
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
+namespace TrackerApp;
+
+public sealed partial class AppDatabase
+{
+    private const string LibrarySeedVersionKey = "LibrarySeedVersion";
+
+    private void CreateBaseSchema(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS Subjects (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ParentId INTEGER NULL,
+                Name TEXT NOT NULL,
+                NodeType TEXT NOT NULL DEFAULT 'Generic',
+                SourceSystem TEXT NOT NULL DEFAULT '',
+                SourceKey TEXT NOT NULL DEFAULT '',
+                SortOrder INTEGER NOT NULL,
+                FOREIGN KEY (ParentId) REFERENCES Subjects(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS StudyItems (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                SubjectId INTEGER NOT NULL,
+                Topic TEXT NOT NULL,
+                Question TEXT NOT NULL,
+                Answer TEXT NOT NULL,
+                SubjectPathCache TEXT NOT NULL DEFAULT '',
+                RootCategoryCache TEXT NOT NULL DEFAULT '',
+                CreatedAt TEXT NOT NULL,
+                DueDate TEXT NOT NULL,
+                Level INTEGER NOT NULL DEFAULT 1,
+                TotalReviews INTEGER NOT NULL DEFAULT 0,
+                LastReviewedAt TEXT NULL,
+                FOREIGN KEY (SubjectId) REFERENCES Subjects(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ReviewHistory (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                StudyItemId INTEGER NOT NULL,
+                ReviewedAt TEXT NOT NULL,
+                Score INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (StudyItemId) REFERENCES StudyItems(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS Tags (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                Name TEXT NOT NULL
+            );
+
+            CREATE TABLE IF NOT EXISTS StudyItemTags (
+                StudyItemId INTEGER NOT NULL,
+                TagId INTEGER NOT NULL,
+                PRIMARY KEY (StudyItemId, TagId),
+                FOREIGN KEY (StudyItemId) REFERENCES StudyItems(Id),
+                FOREIGN KEY (TagId) REFERENCES Tags(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS AppMetadata (
+                Key TEXT PRIMARY KEY,
+                Value TEXT NOT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private void UpgradeSchema(SqliteConnection connection)
+    {
+        EnsureColumn(connection, "Subjects", "NodeType", "TEXT NOT NULL DEFAULT 'Generic'");
+        EnsureColumn(connection, "Subjects", "SourceSystem", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "Subjects", "SourceKey", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "StudyItems", "SubjectPathCache", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "StudyItems", "RootCategoryCache", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "StudyItems", "ModifiedAt", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "StudyItems", "RepetitionCount", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "StudyItems", "Lapses", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "StudyItems", "EaseFactor", "REAL NOT NULL DEFAULT 2.5");
+        EnsureColumn(connection, "StudyItems", "IntervalDays", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "StudyItems", "LastRating", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "ReviewHistory", "Rating", "TEXT NOT NULL DEFAULT 'Good'");
+        EnsureColumn(connection, "ReviewHistory", "WasSuccessful", "INTEGER NOT NULL DEFAULT 1");
+        EnsureColumn(connection, "ReviewHistory", "EaseFactorBefore", "REAL NOT NULL DEFAULT 2.5");
+        EnsureColumn(connection, "ReviewHistory", "EaseFactorAfter", "REAL NOT NULL DEFAULT 2.5");
+        EnsureColumn(connection, "ReviewHistory", "IntervalBefore", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "ReviewHistory", "IntervalAfter", "REAL NOT NULL DEFAULT 0");
+
+        ExecuteNonQuery(connection, null, "CREATE UNIQUE INDEX IF NOT EXISTS IX_Tags_Name ON Tags(Name COLLATE NOCASE);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_StudyItems_SubjectId ON StudyItems(SubjectId);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_StudyItems_DueDate ON StudyItems(DueDate);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_StudyItems_LastRating ON StudyItems(LastRating);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_StudyItems_SubjectPathCache ON StudyItems(SubjectPathCache);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_StudyItemTags_TagId_StudyItemId ON StudyItemTags(TagId, StudyItemId);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_StudyItemTags_StudyItemId_TagId ON StudyItemTags(StudyItemId, TagId);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_ReviewHistory_StudyItemId_ReviewedAt ON ReviewHistory(StudyItemId, ReviewedAt);");
+        ExecuteNonQuery(connection, null, "CREATE INDEX IF NOT EXISTS IX_ReviewHistory_FailedRecent ON ReviewHistory(WasSuccessful, ReviewedAt);");
+    }
+
+    private void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string definition)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetString(1).Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        reader.Close();
+
+        using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};";
+        alterCommand.ExecuteNonQuery();
+    }
+
+    private void EnsureDefaultLibraryStructure(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        var sortOrder = 1;
+        foreach (var rootNode in LibrarySeedFactory.GetDefaultHierarchy())
+        {
+            EnsureLibraryNode(connection, transaction, null, rootNode, sortOrder++);
+        }
+    }
+
+    private void EnsureLibrarySeed(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        var hasSubjects = GetSubjectsCount(connection, transaction) > 0;
+        EnsureDefaultLibraryStructure(connection, transaction);
+        if (!hasSubjects)
+        {
+            SeedSampleCardsIfEmpty(connection, transaction);
+        }
+
+        SetMetadataValue(connection, transaction, LibrarySeedVersionKey, LibrarySeedFactory.SeedVersion);
+    }
+
+    private void SeedSampleCardsIfEmpty(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var countCommand = connection.CreateCommand();
+        countCommand.Transaction = transaction;
+        countCommand.CommandText = "SELECT COUNT(*) FROM StudyItems;";
+        var count = Convert.ToInt32(countCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
+        if (count > 0)
+        {
+            return;
+        }
+
+        foreach (var sample in LibrarySeedFactory.GetSampleCards())
+        {
+            var subjectId = EnsureSubjectPath(connection, transaction, sample.Path);
+            InsertStudyItem(connection, transaction, subjectId, sample.Topic, sample.Question, sample.Answer, DateTime.Now);
+        }
+    }
+
+    private static void ResetLibraryData(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        ExecuteNonQuery(connection, transaction, "PRAGMA foreign_keys = OFF;");
+
+        foreach (var sql in new[]
+                 {
+                     "DELETE FROM ReviewHistory;",
+                     "DELETE FROM StudyItems;",
+                     "DELETE FROM Subjects;",
+                     "DELETE FROM sqlite_sequence WHERE name IN ('ReviewHistory', 'StudyItems', 'Subjects');"
+                 })
+        {
+            ExecuteNonQuery(connection, transaction, sql);
+        }
+
+        ExecuteNonQuery(connection, transaction, "PRAGMA foreign_keys = ON;");
+    }
+
+    private void NormalizeExistingItems(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT Id, SubjectId, CreatedAt, Level, ModifiedAt, EaseFactor, IntervalDays, RepetitionCount
+            FROM StudyItems;
+            """;
+
+        using var reader = command.ExecuteReader();
+        var updates = new List<(int Id, string ModifiedAt, double IntervalDays, int Repetitions, double EaseFactor, string LastRating, string SubjectPathCache, string RootCategoryCache)>();
+        while (reader.Read())
+        {
+            var id = reader.GetInt32(0);
+            var subjectId = reader.GetInt32(1);
+            var createdAt = ParseDate(reader.GetString(2));
+            var level = reader.GetInt32(3);
+            var modifiedAt = reader.IsDBNull(4) || string.IsNullOrWhiteSpace(reader.GetString(4))
+                ? FormatDate(createdAt)
+                : reader.GetString(4);
+            var easeFactor = reader.IsDBNull(5) ? 2.5 : reader.GetDouble(5);
+            var intervalDays = reader.IsDBNull(6) ? 0 : reader.GetDouble(6);
+            var repetitions = reader.IsDBNull(7) ? 0 : reader.GetInt32(7);
+
+            if (repetitions == 0 && level > 1)
+            {
+                repetitions = Math.Max(0, level - 1);
+            }
+
+            if (intervalDays == 0 && repetitions > 0)
+            {
+                intervalDays = InferIntervalDays(level);
+            }
+
+            updates.Add((
+                id,
+                modifiedAt,
+                intervalDays,
+                repetitions,
+                easeFactor <= 0 ? 2.5 : easeFactor,
+                repetitions > 0 ? "Good" : string.Empty,
+                GetSubjectPath(subjectId),
+                GetRootCategory(subjectId)));
+        }
+
+        reader.Close();
+
+        foreach (var update in updates)
+        {
+            using var updateCommand = connection.CreateCommand();
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                """
+                UPDATE StudyItems
+                SET ModifiedAt = $modifiedAt,
+                    IntervalDays = $intervalDays,
+                    RepetitionCount = $repetitions,
+                    EaseFactor = $easeFactor,
+                    SubjectPathCache = $subjectPathCache,
+                    RootCategoryCache = $rootCategoryCache,
+                    LastRating = CASE WHEN LastRating = '' THEN $lastRating ELSE LastRating END
+                WHERE Id = $id;
+                """;
+            updateCommand.Parameters.AddWithValue("$id", update.Id);
+            updateCommand.Parameters.AddWithValue("$modifiedAt", update.ModifiedAt);
+            updateCommand.Parameters.AddWithValue("$intervalDays", update.IntervalDays);
+            updateCommand.Parameters.AddWithValue("$repetitions", update.Repetitions);
+            updateCommand.Parameters.AddWithValue("$easeFactor", update.EaseFactor);
+            updateCommand.Parameters.AddWithValue("$subjectPathCache", update.SubjectPathCache);
+            updateCommand.Parameters.AddWithValue("$rootCategoryCache", update.RootCategoryCache);
+            updateCommand.Parameters.AddWithValue("$lastRating", update.LastRating);
+            updateCommand.ExecuteNonQuery();
+        }
+    }
+
+    private void NormalizeSefariaSubjectNames(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT Id, NodeType, SourceKey, Name
+            FROM Subjects
+            WHERE SourceSystem = 'Sefaria';
+            """;
+
+        using var reader = command.ExecuteReader();
+        var updates = new List<(int Id, string Name)>();
+        while (reader.Read())
+        {
+            var id = reader.GetInt32(0);
+            var nodeType = reader.GetString(1);
+            var sourceKey = reader.IsDBNull(2) ? string.Empty : reader.GetString(2);
+            var currentName = reader.GetString(3);
+
+            string? expectedName = nodeType switch
+            {
+                nameof(LibraryNodeType.Book) when !string.IsNullOrWhiteSpace(sourceKey)
+                    => _sefariaApiService.GetPreferredBookHebrewTitle(sourceKey),
+                _ => null
+            };
+
+            if (!string.IsNullOrWhiteSpace(expectedName) &&
+                !string.Equals(currentName, expectedName, StringComparison.Ordinal))
+            {
+                updates.Add((id, expectedName));
+            }
+        }
+
+        reader.Close();
+
+        foreach (var update in updates)
+        {
+            using var updateCommand = connection.CreateCommand();
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                """
+                UPDATE Subjects
+                SET Name = $name
+                WHERE Id = $id;
+                """;
+            updateCommand.Parameters.AddWithValue("$id", update.Id);
+            updateCommand.Parameters.AddWithValue("$name", update.Name);
+            updateCommand.ExecuteNonQuery();
+        }
+    }
+
+    public int AddSubjectFolder(int? parentId, string folderName)
+    {
+        if (string.IsNullOrWhiteSpace(folderName))
+        {
+            throw new ArgumentException("Folder name is required.", nameof(folderName));
+        }
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var normalizedName = folderName.Trim();
+        var existingId = FindSubjectId(connection, transaction, parentId, normalizedName);
+        if (existingId.HasValue)
+        {
+            transaction.Commit();
+            RefreshSubjectCache();
+            return existingId.Value;
+        }
+
+        var subjectId = InsertSubject(
+            connection,
+            transaction,
+            parentId,
+            normalizedName,
+            LibraryNodeType.Generic,
+            string.Empty,
+            string.Empty,
+            GetNextSortOrder(connection, transaction, parentId));
+
+        transaction.Commit();
+        RefreshSubjectCache();
+        return subjectId;
+    }
+
+    private int EnsureSubjectPath(SqliteConnection connection, SqliteTransaction transaction, IEnumerable<string> segments)
+    {
+        int? parentId = null;
+
+        foreach (var rawSegment in segments)
+        {
+            var segment = rawSegment.Trim();
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+
+            var existingId = FindSubjectId(connection, transaction, parentId, segment);
+            if (existingId.HasValue)
+            {
+                parentId = existingId.Value;
+            }
+            else
+            {
+                parentId = InsertSubject(
+                    connection,
+                    transaction,
+                    parentId,
+                    segment,
+                    LibraryNodeType.Generic,
+                    string.Empty,
+                    string.Empty,
+                    GetNextSortOrder(connection, transaction, parentId));
+            }
+        }
+
+        return parentId ?? throw new InvalidOperationException("Subject path could not be resolved.");
+    }
+
+    private int EnsureLibraryNode(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int? parentId,
+        LibrarySeedNode node,
+        int sortOrder)
+    {
+        var existingId = FindSubjectId(connection, transaction, parentId, node.Name);
+        if (!existingId.HasValue &&
+            !string.IsNullOrWhiteSpace(node.SourceSystem) &&
+            !string.IsNullOrWhiteSpace(node.SourceKey))
+        {
+            existingId = FindSubjectIdBySource(connection, transaction, parentId, node.SourceSystem, node.SourceKey);
+        }
+
+        var nodeId = existingId ?? InsertSubject(
+            connection,
+            transaction,
+            parentId,
+            node.Name,
+            node.NodeType,
+            node.SourceSystem,
+            node.SourceKey,
+            sortOrder);
+
+        if (existingId.HasValue)
+        {
+            UpdateSortOrder(connection, transaction, nodeId, sortOrder);
+            UpdateSubjectMetadata(connection, transaction, nodeId, node);
+        }
+
+        var childSortOrder = 1;
+        foreach (var child in node.Children)
+        {
+            EnsureLibraryNode(connection, transaction, nodeId, child, childSortOrder++);
+        }
+
+        return nodeId;
+    }
+
+    private static int? FindSubjectId(SqliteConnection connection, SqliteTransaction transaction, int? parentId, string name)
+    {
+        using var findCommand = connection.CreateCommand();
+        findCommand.Transaction = transaction;
+        findCommand.CommandText =
+            """
+            SELECT Id
+            FROM Subjects
+            WHERE ((ParentId IS NULL AND $parentId IS NULL) OR ParentId = $parentId)
+              AND Name = $name
+            LIMIT 1;
+            """;
+        findCommand.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        findCommand.Parameters.AddWithValue("$name", name);
+
+        var existingId = findCommand.ExecuteScalar();
+        return existingId is null ? null : Convert.ToInt32(existingId, CultureInfo.InvariantCulture);
+    }
+
+    private static int? FindSubjectIdBySource(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int? parentId,
+        string sourceSystem,
+        string sourceKey)
+    {
+        using var findCommand = connection.CreateCommand();
+        findCommand.Transaction = transaction;
+        findCommand.CommandText =
+            """
+            SELECT Id
+            FROM Subjects
+            WHERE ((ParentId IS NULL AND $parentId IS NULL) OR ParentId = $parentId)
+              AND SourceSystem = $sourceSystem
+              AND SourceKey = $sourceKey
+            LIMIT 1;
+            """;
+        findCommand.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        findCommand.Parameters.AddWithValue("$sourceSystem", sourceSystem);
+        findCommand.Parameters.AddWithValue("$sourceKey", sourceKey);
+
+        var existingId = findCommand.ExecuteScalar();
+        return existingId is null ? null : Convert.ToInt32(existingId, CultureInfo.InvariantCulture);
+    }
+
+    private static int InsertSubject(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int? parentId,
+        string name,
+        LibraryNodeType nodeType,
+        string sourceSystem,
+        string sourceKey,
+        int sortOrder)
+    {
+        using var insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText =
+            """
+            INSERT INTO Subjects (ParentId, Name, NodeType, SourceSystem, SourceKey, SortOrder)
+            VALUES ($parentId, $name, $nodeType, $sourceSystem, $sourceKey, $sortOrder);
+            """;
+        insertCommand.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$name", name);
+        insertCommand.Parameters.AddWithValue("$nodeType", nodeType.ToString());
+        insertCommand.Parameters.AddWithValue("$sourceSystem", sourceSystem);
+        insertCommand.Parameters.AddWithValue("$sourceKey", sourceKey);
+        insertCommand.Parameters.AddWithValue("$sortOrder", sortOrder);
+        insertCommand.ExecuteNonQuery();
+        return GetLastInsertRowId(connection, transaction);
+    }
+
+    private static void UpdateSortOrder(SqliteConnection connection, SqliteTransaction transaction, int subjectId, int sortOrder)
+    {
+        using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
+        updateCommand.CommandText =
+            """
+            UPDATE Subjects
+            SET SortOrder = $sortOrder
+            WHERE Id = $subjectId AND SortOrder <> $sortOrder;
+            """;
+        updateCommand.Parameters.AddWithValue("$subjectId", subjectId);
+        updateCommand.Parameters.AddWithValue("$sortOrder", sortOrder);
+        updateCommand.ExecuteNonQuery();
+    }
+
+    private static int GetNextSortOrder(SqliteConnection connection, SqliteTransaction transaction, int? parentId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT COALESCE(MAX(SortOrder), 0) + 1
+            FROM Subjects
+            WHERE ((ParentId IS NULL AND $parentId IS NULL) OR ParentId = $parentId);
+            """;
+        command.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    private static void UpdateSubjectMetadata(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int subjectId,
+        LibrarySeedNode node)
+    {
+        using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
+        updateCommand.CommandText =
+            """
+            UPDATE Subjects
+            SET Name = $name,
+                NodeType = $nodeType,
+                SourceSystem = $sourceSystem,
+                SourceKey = $sourceKey
+            WHERE Id = $subjectId
+              AND (Name <> $name OR NodeType <> $nodeType OR SourceSystem <> $sourceSystem OR SourceKey <> $sourceKey);
+            """;
+        updateCommand.Parameters.AddWithValue("$subjectId", subjectId);
+        updateCommand.Parameters.AddWithValue("$name", node.Name);
+        updateCommand.Parameters.AddWithValue("$nodeType", node.NodeType.ToString());
+        updateCommand.Parameters.AddWithValue("$sourceSystem", node.SourceSystem);
+        updateCommand.Parameters.AddWithValue("$sourceKey", node.SourceKey);
+        updateCommand.ExecuteNonQuery();
+    }
+
+    private static int GetSubjectsCount(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM Subjects;";
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    private static string? GetMetadataValue(SqliteConnection connection, SqliteTransaction transaction, string key)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key = $key LIMIT 1;";
+        command.Parameters.AddWithValue("$key", key);
+        return command.ExecuteScalar() as string;
+    }
+
+    private static void SetMetadataValue(SqliteConnection connection, SqliteTransaction transaction, string key, string value)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO AppMetadata (Key, Value)
+            VALUES ($key, $value)
+            ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value;
+            """;
+        command.Parameters.AddWithValue("$key", key);
+        command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
+    }
+
+    private void InsertStudyItem(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int subjectId,
+        string topic,
+        string question,
+        string answer,
+        DateTime now)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO StudyItems (
+                SubjectId, Topic, Question, Answer, SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
+                TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            )
+            VALUES (
+                $subjectId, $topic, $question, $answer, $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
+                0, 0, 0, 2.5, 0, '', NULL
+            );
+            """;
+        command.Parameters.AddWithValue("$subjectId", subjectId);
+        command.Parameters.AddWithValue("$topic", topic.Trim());
+        command.Parameters.AddWithValue("$question", question.Trim());
+        command.Parameters.AddWithValue("$answer", answer.Trim());
+        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
+        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
+        command.Parameters.AddWithValue("$createdAt", FormatDate(now));
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
+        command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
+        command.ExecuteNonQuery();
+    }
+
+    private static double InferIntervalDays(int level)
+    {
+        return level switch
+        {
+            <= 1 => 0,
+            2 => 1,
+            3 => 7,
+            4 => 14,
+            _ => 14 * Math.Pow(2, Math.Max(0, level - 4))
+        };
+    }
+
+    private static void ExecuteNonQuery(SqliteConnection connection, SqliteTransaction? transaction, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AppDatabase.StudyFeatures.cs
+========================================================================================================================
+using System.Globalization;
+using System.Text;
+using Microsoft.Data.Sqlite;
+
+namespace TrackerApp;
+
+public sealed partial class AppDatabase
+{
+    public IReadOnlyList<TagModel> GetTags()
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT t.Id,
+                   t.Name,
+                   COUNT(sit.StudyItemId) AS UsageCount
+            FROM Tags t
+            LEFT JOIN StudyItemTags sit ON sit.TagId = t.Id
+            GROUP BY t.Id, t.Name
+            ORDER BY t.Name COLLATE NOCASE;
+            """;
+
+        using var reader = command.ExecuteReader();
+        var tags = new List<TagModel>();
+        while (reader.Read())
+        {
+            tags.Add(new TagModel
+            {
+                Id = reader.GetInt32(0),
+                Name = reader.GetString(1),
+                UsageCount = reader.GetInt32(2)
+            });
+        }
+
+        return tags;
+    }
+
+    public IReadOnlyList<TagModel> GetTagsForStudyItem(int itemId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT t.Id, t.Name
+            FROM Tags t
+            INNER JOIN StudyItemTags sit ON sit.TagId = t.Id
+            WHERE sit.StudyItemId = $itemId
+            ORDER BY t.Name COLLATE NOCASE;
+            """;
+        command.Parameters.AddWithValue("$itemId", itemId);
+
+        using var reader = command.ExecuteReader();
+        var tags = new List<TagModel>();
+        while (reader.Read())
+        {
+            tags.Add(new TagModel
+            {
+                Id = reader.GetInt32(0),
+                Name = reader.GetString(1)
+            });
+        }
+
+        return tags;
+    }
+
+    public int AddTag(string name)
+    {
+        var normalizedName = NormalizeTagName(name);
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var existingId = FindTagId(connection, transaction, normalizedName);
+        if (existingId.HasValue)
+        {
+            transaction.Commit();
+            return existingId.Value;
+        }
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO Tags (Name)
+            VALUES ($name);
+            """;
+        command.Parameters.AddWithValue("$name", normalizedName);
+        command.ExecuteNonQuery();
+
+        transaction.Commit();
+        return GetLastInsertRowId(connection, null);
+    }
+
+    public void UpdateTag(int tagId, string name)
+    {
+        var normalizedName = NormalizeTagName(name);
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var existingId = FindTagId(connection, transaction, normalizedName);
+        if (existingId.HasValue && existingId.Value != tagId)
+        {
+            throw new InvalidOperationException("×›×‘×¨ ×§×™×™×ž×ª ×ª×’×™×ª ×‘×©× ×–×”.");
+        }
+
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            UPDATE Tags
+            SET Name = $name
+            WHERE Id = $id;
+            """;
+        command.Parameters.AddWithValue("$id", tagId);
+        command.Parameters.AddWithValue("$name", normalizedName);
+        command.ExecuteNonQuery();
+
+        transaction.Commit();
+    }
+
+    public void DeleteTag(int tagId)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        using (var relationCommand = connection.CreateCommand())
+        {
+            relationCommand.Transaction = transaction;
+            relationCommand.CommandText = "DELETE FROM StudyItemTags WHERE TagId = $tagId;";
+            relationCommand.Parameters.AddWithValue("$tagId", tagId);
+            relationCommand.ExecuteNonQuery();
+        }
+
+        using (var deleteCommand = connection.CreateCommand())
+        {
+            deleteCommand.Transaction = transaction;
+            deleteCommand.CommandText = "DELETE FROM Tags WHERE Id = $tagId;";
+            deleteCommand.Parameters.AddWithValue("$tagId", tagId);
+            deleteCommand.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public void SetTagsForStudyItem(int itemId, IEnumerable<int> tagIds)
+    {
+        var normalizedTagIds = tagIds
+            .Distinct()
+            .OrderBy(tagId => tagId)
+            .ToArray();
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        using (var deleteCommand = connection.CreateCommand())
+        {
+            deleteCommand.Transaction = transaction;
+            deleteCommand.CommandText = "DELETE FROM StudyItemTags WHERE StudyItemId = $itemId;";
+            deleteCommand.Parameters.AddWithValue("$itemId", itemId);
+            deleteCommand.ExecuteNonQuery();
+        }
+
+        foreach (var tagId in normalizedTagIds)
+        {
+            using var insertCommand = connection.CreateCommand();
+            insertCommand.Transaction = transaction;
+            insertCommand.CommandText =
+                """
+                INSERT INTO StudyItemTags (StudyItemId, TagId)
+                VALUES ($itemId, $tagId);
+                """;
+            insertCommand.Parameters.AddWithValue("$itemId", itemId);
+            insertCommand.Parameters.AddWithValue("$tagId", tagId);
+            insertCommand.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public IReadOnlyList<StudyItemModel> SearchStudyItems(StudySearchQuery query)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        var sql = new StringBuilder(
+            """
+            WITH RECURSIVE SubjectTree AS (
+                SELECT Id FROM Subjects WHERE Id = $subjectId
+                UNION ALL
+                SELECT Subjects.Id
+                FROM Subjects
+                INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
+            )
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems i
+            WHERE 1 = 1 
+            """);
+
+        if (query.LimitToSelectedNode && query.SubjectId.HasValue)
+        {
+            sql.AppendLine(" AND i.SubjectId IN (SELECT Id FROM SubjectTree)");
+            command.Parameters.AddWithValue("$subjectId", query.SubjectId.Value);
+        }
+        else
+        {
+            command.Parameters.AddWithValue("$subjectId", DBNull.Value);
+        }
+
+        if (query.TagId.HasValue)
+        {
+            sql.AppendLine(" AND EXISTS (SELECT 1 FROM StudyItemTags sit WHERE sit.StudyItemId = i.Id AND sit.TagId = $tagId)");
+            command.Parameters.AddWithValue("$tagId", query.TagId.Value);
+        }
+
+        var tokens = SplitSearchTokens(query.SearchText);
+        for (var index = 0; index < tokens.Length; index++)
+        {
+            var parameterName = $"$token{index}";
+            sql.AppendLine(
+                $"""
+                 AND (
+                        i.SubjectPathCache LIKE {parameterName}
+                     OR i.Topic LIKE {parameterName}
+                     OR i.Question LIKE {parameterName}
+                     OR i.Answer LIKE {parameterName}
+                     OR EXISTS (
+                            SELECT 1
+                            FROM StudyItemTags sit
+                            INNER JOIN Tags t ON t.Id = sit.TagId
+                            WHERE sit.StudyItemId = i.Id
+                              AND t.Name LIKE {parameterName}
+                        )
+                 )
+                 """);
+            command.Parameters.AddWithValue(parameterName, $"%{tokens[index]}%");
+        }
+
+        sql.AppendLine(" ORDER BY date(i.DueDate) ASC, i.Topic COLLATE NOCASE ASC;");
+        command.CommandText = sql.ToString();
+
+        return LoadStudyItems(connection, command);
+    }
+
+    public IReadOnlyList<StudyItemModel> GetStudyItemsForReview(StudyReviewFilter filter)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        var sql = new StringBuilder(
+            """
+            WITH RECURSIVE SubjectTree AS (
+                SELECT Id FROM Subjects WHERE Id = $subjectId
+                UNION ALL
+                SELECT Subjects.Id
+                FROM Subjects
+                INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
+            )
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems i
+            WHERE 1 = 1 
+            """);
+
+        if (filter.RestrictToSelectedNode && filter.SubjectId.HasValue)
+        {
+            sql.AppendLine(" AND i.SubjectId IN (SELECT Id FROM SubjectTree)");
+            command.Parameters.AddWithValue("$subjectId", filter.SubjectId.Value);
+        }
+        else
+        {
+            command.Parameters.AddWithValue("$subjectId", DBNull.Value);
+        }
+
+        if (filter.TagId.HasValue)
+        {
+            sql.AppendLine(" AND EXISTS (SELECT 1 FROM StudyItemTags sit WHERE sit.StudyItemId = i.Id AND sit.TagId = $tagId)");
+            command.Parameters.AddWithValue("$tagId", filter.TagId.Value);
+        }
+
+        if (filter.DueOnly)
+        {
+            sql.AppendLine(" AND date(i.DueDate) <= date('now', 'localtime')");
+        }
+
+        if (filter.FailedRecentlyOnly)
+        {
+            sql.AppendLine(
+                """
+                 AND EXISTS (
+                        SELECT 1
+                        FROM ReviewHistory rh
+                        WHERE rh.StudyItemId = i.Id
+                          AND rh.WasSuccessful = 0
+                          AND date(rh.ReviewedAt) >= date('now', '-14 day')
+                    )
+                 """);
+        }
+
+        AppendDifficultyFilter(sql, filter.Difficulty);
+        sql.AppendLine(" ORDER BY date(i.DueDate) ASC, i.EaseFactor ASC, i.Lapses DESC, i.Topic COLLATE NOCASE ASC;");
+        command.CommandText = sql.ToString();
+
+        return LoadStudyItems(connection, command);
+    }
+
+    private IReadOnlyList<StudyItemModel> LoadStudyItems(SqliteConnection connection, SqliteCommand command)
+    {
+        using var reader = command.ExecuteReader();
+        var items = new List<StudyItemModel>();
+        while (reader.Read())
+        {
+            items.Add(MapStudyItem(reader));
+        }
+
+        AttachTagsToItems(connection, items);
+        return items;
+    }
+
+    private void AttachTagsToItems(SqliteConnection connection, IReadOnlyList<StudyItemModel> items)
+    {
+        if (items.Count == 0)
+        {
+            return;
+        }
+
+        var tagLookup = items.ToDictionary(item => item.Id, _ => new List<TagModel>());
+        var idList = string.Join(",", items.Select(item => item.Id.ToString(CultureInfo.InvariantCulture)));
+
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"""
+             SELECT sit.StudyItemId, t.Id, t.Name
+             FROM StudyItemTags sit
+             INNER JOIN Tags t ON t.Id = sit.TagId
+             WHERE sit.StudyItemId IN ({idList})
+             ORDER BY t.Name COLLATE NOCASE;
+             """;
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            tagLookup[reader.GetInt32(0)].Add(new TagModel
+            {
+                Id = reader.GetInt32(1),
+                Name = reader.GetString(2)
+            });
+        }
+
+        foreach (var item in items)
+        {
+            item.Tags.Clear();
+            item.Tags.AddRange(tagLookup[item.Id]);
+        }
+    }
+
+    private static string NormalizeTagName(string name)
+    {
+        var normalized = name.Trim();
+        if (normalized.Length == 0)
+        {
+            throw new InvalidOperationException("×™×© ×œ×”×–×™×Ÿ ×©× ×ª×’×™×ª.");
+        }
+
+        return normalized;
+    }
+
+    private static int? FindTagId(SqliteConnection connection, SqliteTransaction transaction, string name)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT Id FROM Tags WHERE Name = $name COLLATE NOCASE LIMIT 1;";
+        command.Parameters.AddWithValue("$name", name);
+        var result = command.ExecuteScalar();
+        return result is null ? null : Convert.ToInt32(result, CultureInfo.InvariantCulture);
+    }
+
+    private static string[] SplitSearchTokens(string rawSearchText)
+    {
+        return rawSearchText
+            .Split(' ', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static void AppendDifficultyFilter(StringBuilder sql, StudyDifficulty difficulty)
+    {
+        switch (difficulty)
+        {
+            case StudyDifficulty.Easy:
+                sql.AppendLine(" AND i.Lapses = 0 AND i.EaseFactor >= 2.45 AND (i.LastRating = '' OR i.LastRating IN ('Good', 'Easy', 'Perfect'))");
+                break;
+            case StudyDifficulty.Medium:
+                sql.AppendLine(" AND ((i.Lapses = 1) OR (i.EaseFactor >= 2.2 AND i.EaseFactor < 2.45))");
+                break;
+            case StudyDifficulty.Hard:
+                sql.AppendLine(" AND (i.Lapses >= 2 OR i.EaseFactor < 2.2 OR i.LastRating IN ('Again', 'Hard'))");
+                break;
+        }
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\SearchFilterControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class SearchFilterControl : UserControl
+{
+    private readonly TextBox _searchTextBox = new();
+    private readonly CheckBox _limitToSelectedNodeCheckBox = new();
+    private readonly ComboBox _tagComboBox = new();
+    private readonly Label _selectedNodeLabel = new();
+    private readonly Label _resultSummaryLabel = new();
+
+    public event EventHandler? SearchRequested;
+    public event EventHandler? ClearRequested;
+
+    public SearchFilterControl()
+    {
+        BackColor = ClassicPalette.CardBackground;
+        BorderStyle = BorderStyle.FixedSingle;
+        Dock = DockStyle.Top;
+        Height = 96;
+        RightToLeft = RightToLeft.Yes;
+        BuildLayout();
+    }
+
+    public string SearchText => _searchTextBox.Text.Trim();
+    public bool LimitToSelectedNode => _limitToSelectedNodeCheckBox.Checked;
+    public int? SelectedTagId => _tagComboBox.SelectedItem is TagChoice choice && choice.Id > 0 ? choice.Id : null;
+
+    public void BindTags(IReadOnlyList<TagModel> tags)
+    {
+        var selectedId = SelectedTagId;
+        _tagComboBox.Items.Clear();
+        _tagComboBox.Items.Add(new TagChoice(null, "×›×œ ×”×ª×’×™×•×ª"));
+        foreach (var tag in tags)
+        {
+            _tagComboBox.Items.Add(new TagChoice(tag.Id, tag.Name));
+        }
+
+        _tagComboBox.SelectedIndex = 0;
+        if (selectedId.HasValue)
+        {
+            for (var index = 0; index < _tagComboBox.Items.Count; index++)
+            {
+                if (_tagComboBox.Items[index] is TagChoice choice && choice.Id == selectedId)
+                {
+                    _tagComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+    }
+
+    public void SetSelectedNodePath(string path)
+    {
+        _selectedNodeLabel.Text = string.IsNullOrWhiteSpace(path) ? "×œ×œ× ×¦×•×ž×ª × ×‘×—×¨" : path;
+    }
+
+    public void SetResultSummary(string summary)
+    {
+        _resultSummaryLabel.Text = summary;
+    }
+
+    public void SetSearchState(string searchText, bool limitToSelectedNode, int? tagId)
+    {
+        _searchTextBox.Text = searchText;
+        _limitToSelectedNodeCheckBox.Checked = limitToSelectedNode;
+
+        _tagComboBox.SelectedIndex = 0;
+        if (tagId.HasValue)
+        {
+            for (var index = 0; index < _tagComboBox.Items.Count; index++)
+            {
+                if (_tagComboBox.Items[index] is TagChoice choice && choice.Id == tagId)
+                {
+                    _tagComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+    }
+
+    private void BuildLayout()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 6,
+            RowCount = 2,
+            Padding = new Padding(8)
+        };
+
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 110F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 180F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 116F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+
+        _searchTextBox.Dock = DockStyle.Fill;
+        _searchTextBox.RightToLeft = RightToLeft.Yes;
+        _searchTextBox.BorderStyle = BorderStyle.FixedSingle;
+        _searchTextBox.KeyDown += (_, args) =>
+        {
+            if (args.KeyCode == Keys.Enter)
+            {
+                SearchRequested?.Invoke(this, EventArgs.Empty);
+            }
+        };
+
+        _tagComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _tagComboBox.Dock = DockStyle.Fill;
+
+        _limitToSelectedNodeCheckBox.Text = "×¨×§ ×‘×ª×•×š ×”×¦×•×ž×ª ×”× ×‘×—×¨";
+        _limitToSelectedNodeCheckBox.Dock = DockStyle.Fill;
+        _limitToSelectedNodeCheckBox.TextAlign = ContentAlignment.MiddleRight;
+        _limitToSelectedNodeCheckBox.RightToLeft = RightToLeft.Yes;
+
+        _selectedNodeLabel.Dock = DockStyle.Fill;
+        _selectedNodeLabel.TextAlign = ContentAlignment.MiddleRight;
+        _selectedNodeLabel.BorderStyle = BorderStyle.FixedSingle;
+        _selectedNodeLabel.BackColor = Color.White;
+
+        _resultSummaryLabel.Dock = DockStyle.Fill;
+        _resultSummaryLabel.TextAlign = ContentAlignment.MiddleRight;
+        _resultSummaryLabel.Font = new Font(Font, FontStyle.Bold);
+
+        var searchButton = CreateButton("×—×¤×©");
+        searchButton.Click += (_, _) => SearchRequested?.Invoke(this, EventArgs.Empty);
+        var clearButton = CreateButton("× ×§×”");
+        clearButton.Click += (_, _) =>
+        {
+            _searchTextBox.Clear();
+            _tagComboBox.SelectedIndex = 0;
+            _limitToSelectedNodeCheckBox.Checked = false;
+            ClearRequested?.Invoke(this, EventArgs.Empty);
+        };
+
+        layout.Controls.Add(CreateLabel("×—×™×¤×•×©"), 0, 0);
+        layout.Controls.Add(_searchTextBox, 1, 0);
+        layout.Controls.Add(CreateLabel("×ª×’×™×ª"), 2, 0);
+        layout.Controls.Add(_tagComboBox, 3, 0);
+        layout.Controls.Add(searchButton, 4, 0);
+        layout.Controls.Add(clearButton, 5, 0);
+        layout.Controls.Add(CreateLabel("×¦×•×ž×ª"), 0, 1);
+        layout.Controls.Add(_selectedNodeLabel, 1, 1);
+        layout.Controls.Add(_limitToSelectedNodeCheckBox, 2, 1);
+        layout.SetColumnSpan(_limitToSelectedNodeCheckBox, 2);
+        layout.Controls.Add(_resultSummaryLabel, 4, 1);
+        layout.SetColumnSpan(_resultSummaryLabel, 2);
+
+        Controls.Add(layout);
+    }
+
+    private static Label CreateLabel(string text)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = text,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
+    private static Button CreateButton(string text)
+    {
+        return new Button
+        {
+            Text = text,
+            Dock = DockStyle.Fill,
+            FlatStyle = FlatStyle.Standard
+        };
+    }
+
+    private sealed record TagChoice(int? Id, string Name)
+    {
+        public override string ToString() => Name;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\ReviewFilterControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class ReviewFilterControl : UserControl
+{
+    private readonly CheckBox _restrictToSelectedNodeCheckBox = new();
+    private readonly CheckBox _dueOnlyCheckBox = new();
+    private readonly CheckBox _failedRecentlyCheckBox = new();
+    private readonly ComboBox _difficultyComboBox = new();
+    private readonly ComboBox _tagComboBox = new();
+    private readonly Label _selectedNodeLabel = new();
+    private readonly Label _resultSummaryLabel = new();
+
+    public event EventHandler? ReviewRequested;
+    public event EventHandler? ResetRequested;
+
+    public ReviewFilterControl()
+    {
+        BackColor = ClassicPalette.CardBackground;
+        BorderStyle = BorderStyle.FixedSingle;
+        Dock = DockStyle.Top;
+        Height = 104;
+        RightToLeft = RightToLeft.Yes;
+        BuildLayout();
+    }
+
+    public bool RestrictToSelectedNode => _restrictToSelectedNodeCheckBox.Checked;
+    public bool DueOnly => _dueOnlyCheckBox.Checked;
+    public bool FailedRecentlyOnly => _failedRecentlyCheckBox.Checked;
+    public int? SelectedTagId => _tagComboBox.SelectedItem is TagChoice choice && choice.Id > 0 ? choice.Id : null;
+    public StudyDifficulty SelectedDifficulty => _difficultyComboBox.SelectedItem is DifficultyChoice choice ? choice.Difficulty : StudyDifficulty.Any;
+
+    public void BindTags(IReadOnlyList<TagModel> tags)
+    {
+        var selectedId = SelectedTagId;
+        _tagComboBox.Items.Clear();
+        _tagComboBox.Items.Add(new TagChoice(null, "×›×œ ×”×ª×’×™×•×ª"));
+        foreach (var tag in tags)
+        {
+            _tagComboBox.Items.Add(new TagChoice(tag.Id, tag.Name));
+        }
+
+        _tagComboBox.SelectedIndex = 0;
+        if (selectedId.HasValue)
+        {
+            for (var index = 0; index < _tagComboBox.Items.Count; index++)
+            {
+                if (_tagComboBox.Items[index] is TagChoice choice && choice.Id == selectedId)
+                {
+                    _tagComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+    }
+
+    public void SetSelectedNodePath(string path)
+    {
+        _selectedNodeLabel.Text = string.IsNullOrWhiteSpace(path) ? "×›×œ ×”×¡×¤×¨×™×™×”" : path;
+    }
+
+    public void SetResultSummary(string summary)
+    {
+        _resultSummaryLabel.Text = summary;
+    }
+
+    public void SetFilterState(bool restrictToSelectedNode, bool dueOnly, bool failedRecentlyOnly, StudyDifficulty difficulty, int? tagId)
+    {
+        _restrictToSelectedNodeCheckBox.Checked = restrictToSelectedNode;
+        _dueOnlyCheckBox.Checked = dueOnly;
+        _failedRecentlyCheckBox.Checked = failedRecentlyOnly;
+
+        for (var index = 0; index < _difficultyComboBox.Items.Count; index++)
+        {
+            if (_difficultyComboBox.Items[index] is DifficultyChoice choice && choice.Difficulty == difficulty)
+            {
+                _difficultyComboBox.SelectedIndex = index;
+                break;
+            }
+        }
+
+        _tagComboBox.SelectedIndex = 0;
+        if (tagId.HasValue)
+        {
+            for (var index = 0; index < _tagComboBox.Items.Count; index++)
+            {
+                if (_tagComboBox.Items[index] is TagChoice choice && choice.Id == tagId)
+                {
+                    _tagComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+    }
+
+    private void BuildLayout()
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 6,
+            RowCount = 2,
+            Padding = new Padding(8)
+        };
+
+        for (var index = 0; index < 6; index++)
+        {
+            layout.ColumnStyles.Add(new ColumnStyle(index < 2 ? SizeType.Absolute : SizeType.Percent, index < 2 ? 110F : 25F));
+        }
+
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+
+        _selectedNodeLabel.Dock = DockStyle.Fill;
+        _selectedNodeLabel.TextAlign = ContentAlignment.MiddleRight;
+        _selectedNodeLabel.BorderStyle = BorderStyle.FixedSingle;
+        _selectedNodeLabel.BackColor = Color.White;
+
+        _tagComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _tagComboBox.Dock = DockStyle.Fill;
+
+        _difficultyComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _difficultyComboBox.Dock = DockStyle.Fill;
+        _difficultyComboBox.Items.AddRange(
+        [
+            new DifficultyChoice(StudyDifficulty.Any, "×›×œ ×”×¨×ž×•×ª"),
+            new DifficultyChoice(StudyDifficulty.Hard, "×§×©×”"),
+            new DifficultyChoice(StudyDifficulty.Medium, "×‘×™× ×•× ×™×ª"),
+            new DifficultyChoice(StudyDifficulty.Easy, "×§×œ×”")
+        ]);
+        _difficultyComboBox.SelectedIndex = 0;
+
+        _restrictToSelectedNodeCheckBox.Text = "×¨×§ ×‘×¦×•×ž×ª ×”× ×‘×—×¨";
+        _restrictToSelectedNodeCheckBox.Checked = true;
+        _restrictToSelectedNodeCheckBox.TextAlign = ContentAlignment.MiddleRight;
+        _restrictToSelectedNodeCheckBox.Dock = DockStyle.Fill;
+
+        _dueOnlyCheckBox.Text = "×¨×§ ×œ×‘×™×¦×•×¢ ×”×™×•×";
+        _dueOnlyCheckBox.Checked = true;
+        _dueOnlyCheckBox.TextAlign = ContentAlignment.MiddleRight;
+        _dueOnlyCheckBox.Dock = DockStyle.Fill;
+
+        _failedRecentlyCheckBox.Text = "× ×›×©×œ×• ×œ××—×¨×•× ×”";
+        _failedRecentlyCheckBox.TextAlign = ContentAlignment.MiddleRight;
+        _failedRecentlyCheckBox.Dock = DockStyle.Fill;
+
+        _resultSummaryLabel.Dock = DockStyle.Fill;
+        _resultSummaryLabel.TextAlign = ContentAlignment.MiddleRight;
+        _resultSummaryLabel.Font = new Font(Font, FontStyle.Bold);
+
+        var reviewButton = CreateButton("×”×ª×—×œ ×—×–×¨×”");
+        reviewButton.Click += (_, _) => ReviewRequested?.Invoke(this, EventArgs.Empty);
+        var resetButton = CreateButton("××™×¤×•×¡");
+        resetButton.Click += (_, _) =>
+        {
+            _tagComboBox.SelectedIndex = 0;
+            _difficultyComboBox.SelectedIndex = 0;
+            _restrictToSelectedNodeCheckBox.Checked = true;
+            _dueOnlyCheckBox.Checked = true;
+            _failedRecentlyCheckBox.Checked = false;
+            ResetRequested?.Invoke(this, EventArgs.Empty);
+        };
+
+        layout.Controls.Add(CreateLabel("×¦×•×ž×ª"), 0, 0);
+        layout.Controls.Add(_selectedNodeLabel, 1, 0);
+        layout.SetColumnSpan(_selectedNodeLabel, 2);
+        layout.Controls.Add(CreateLabel("×ª×’×™×ª"), 3, 0);
+        layout.Controls.Add(_tagComboBox, 4, 0);
+        layout.Controls.Add(reviewButton, 5, 0);
+        layout.Controls.Add(CreateLabel("×§×•×©×™"), 0, 1);
+        layout.Controls.Add(_difficultyComboBox, 1, 1);
+        layout.Controls.Add(_restrictToSelectedNodeCheckBox, 2, 1);
+        layout.Controls.Add(_dueOnlyCheckBox, 3, 1);
+        layout.Controls.Add(_failedRecentlyCheckBox, 4, 1);
+        layout.Controls.Add(resetButton, 5, 1);
+
+        var bottomPanel = new Panel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 24
+        };
+        _resultSummaryLabel.Dock = DockStyle.Fill;
+        bottomPanel.Controls.Add(_resultSummaryLabel);
+
+        Controls.Add(layout);
+        Controls.Add(bottomPanel);
+    }
+
+    private static Label CreateLabel(string text)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = text,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
+    private static Button CreateButton(string text)
+    {
+        return new Button
+        {
+            Text = text,
+            Dock = DockStyle.Fill
+        };
+    }
+
+    private sealed record TagChoice(int? Id, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    private sealed record DifficultyChoice(StudyDifficulty Difficulty, string Name)
+    {
+        public override string ToString() => Name;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\TagsManagerControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class TagsManagerControl : UserControl
+{
+    private readonly ListBox _tagListBox = new();
+    private readonly Label _summaryLabel = new();
+    private readonly Label _detailsLabel = new();
+
+    public event EventHandler? AddTagRequested;
+    public event EventHandler<TagModel>? EditTagRequested;
+    public event EventHandler<TagModel>? DeleteTagRequested;
+    public event EventHandler<TagModel>? FilterByTagRequested;
+
+    public TagsManagerControl()
+    {
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        Dock = DockStyle.Fill;
+        BuildLayout();
+    }
+
+    public TagModel? SelectedTag => _tagListBox.SelectedItem as TagModel;
+
+    public void BindTags(IReadOnlyList<TagModel> tags)
+    {
+        var selectedId = SelectedTag?.Id;
+        _tagListBox.BeginUpdate();
+        _tagListBox.Items.Clear();
+        foreach (var tag in tags)
+        {
+            _tagListBox.Items.Add(tag);
+        }
+
+        _tagListBox.EndUpdate();
+        _summaryLabel.Text = $"×¡×”\"×› ×ª×’×™×•×ª: {tags.Count}";
+
+        if (selectedId.HasValue)
+        {
+            for (var index = 0; index < _tagListBox.Items.Count; index++)
+            {
+                if (_tagListBox.Items[index] is TagModel tag && tag.Id == selectedId)
+                {
+                    _tagListBox.SelectedIndex = index;
+                    return;
+                }
+            }
+        }
+
+        if (_tagListBox.Items.Count > 0)
+        {
+            _tagListBox.SelectedIndex = 0;
+        }
+        else
+        {
+            _detailsLabel.Text = "×¢×“×™×™×Ÿ ×œ× ×”×•×’×“×¨×• ×ª×’×™×•×ª.";
+        }
+    }
+
+    public void SelectTag(int tagId)
+    {
+        for (var index = 0; index < _tagListBox.Items.Count; index++)
+        {
+            if (_tagListBox.Items[index] is TagModel tag && tag.Id == tagId)
+            {
+                _tagListBox.SelectedIndex = index;
+                return;
+            }
+        }
+    }
+
+    private void BuildLayout()
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Padding = new Padding(8)
+        };
+
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270F));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+
+        var listPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        _tagListBox.Dock = DockStyle.Fill;
+        _tagListBox.IntegralHeight = false;
+        _tagListBox.SelectedIndexChanged += (_, _) => UpdateSelectedTagDetails();
+
+        listPanel.Controls.Add(_tagListBox);
+        listPanel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×¨×©×™×ž×ª ×ª×’×™×•×ª",
+            TextAlign = ContentAlignment.MiddleRight,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White
+        });
+
+        var detailsPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        _detailsLabel.Dock = DockStyle.Fill;
+        _detailsLabel.Padding = new Padding(12);
+        _detailsLabel.TextAlign = ContentAlignment.TopRight;
+        _detailsLabel.RightToLeft = RightToLeft.Yes;
+
+        detailsPanel.Controls.Add(_detailsLabel);
+        detailsPanel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×¤×¨×˜×™ ×ª×’×™×ª",
+            TextAlign = ContentAlignment.MiddleRight,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White
+        });
+
+        var buttonFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false
+        };
+
+        var addButton = CreateButton("×ª×’×™×ª ×—×“×©×”");
+        addButton.Click += (_, _) => AddTagRequested?.Invoke(this, EventArgs.Empty);
+        var editButton = CreateButton("×¢×¨×™×›×ª ×ª×’×™×ª");
+        editButton.Click += (_, _) =>
+        {
+            if (SelectedTag is not null)
+            {
+                EditTagRequested?.Invoke(this, SelectedTag);
+            }
+        };
+        var deleteButton = CreateButton("×ž×—×™×§×ª ×ª×’×™×ª");
+        deleteButton.Click += (_, _) =>
+        {
+            if (SelectedTag is not null)
+            {
+                DeleteTagRequested?.Invoke(this, SelectedTag);
+            }
+        };
+        var filterButton = CreateButton("×”×¦×’ ×›×¨×˜×™×¡×™×");
+        filterButton.Click += (_, _) =>
+        {
+            if (SelectedTag is not null)
+            {
+                FilterByTagRequested?.Invoke(this, SelectedTag);
+            }
+        };
+
+        buttonFlow.Controls.Add(addButton);
+        buttonFlow.Controls.Add(editButton);
+        buttonFlow.Controls.Add(deleteButton);
+        buttonFlow.Controls.Add(filterButton);
+        buttonFlow.Controls.Add(_summaryLabel);
+        _summaryLabel.AutoSize = true;
+        _summaryLabel.Margin = new Padding(16, 10, 0, 0);
+
+        root.Controls.Add(listPanel, 0, 0);
+        root.Controls.Add(detailsPanel, 1, 0);
+        root.Controls.Add(buttonFlow, 0, 1);
+        root.SetColumnSpan(buttonFlow, 2);
+
+        Controls.Add(root);
+    }
+
+    private void UpdateSelectedTagDetails()
+    {
+        if (SelectedTag is null)
+        {
+            _detailsLabel.Text = "×‘×—×¨×• ×ª×’×™×ª ×ž×”×¨×©×™×ž×”.";
+            return;
+        }
+
+        _detailsLabel.Text =
+            $"×©× ×ª×’×™×ª: {SelectedTag.Name}{Environment.NewLine}{Environment.NewLine}" +
+            $"×ž×¡×¤×¨ ×›×¨×˜×™×¡×™× ×ž×©×•×™×›×™×: {SelectedTag.UsageCount}{Environment.NewLine}{Environment.NewLine}" +
+            "××¤×©×¨ ×œ×™×¦×•×¨, ×œ×¢×¨×•×š, ×œ×ž×—×•×§ ××• ×œ×”×¦×™×’ ××ª ×›×œ ×”×›×¨×˜×™×¡×™× ×©×œ ×ª×’×™×ª ×–×•.";
+    }
+
+    private static Button CreateButton(string text)
+    {
+        return new Button
+        {
+            Text = text,
+            Width = 120,
+            Height = 28,
+            Margin = new Padding(4, 6, 4, 4)
+        };
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\TagEditForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class TagEditForm : Form
+{
+    private readonly TextBox _nameTextBox = new();
+
+    public TagEditForm(string title, string initialName = "")
+    {
+        Text = title;
+        StartPosition = FormStartPosition.CenterParent;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(420, 126);
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+        BuildLayout(initialName);
+    }
+
+    public string TagName => _nameTextBox.Text.Trim();
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (DialogResult == DialogResult.OK && string.IsNullOrWhiteSpace(_nameTextBox.Text))
+        {
+            MessageBox.Show(
+                this,
+                "×™×© ×œ×”×–×™×Ÿ ×©× ×ª×’×™×ª.",
+                "×©×“×” ×—×¡×¨",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning,
+                MessageBoxDefaultButton.Button1,
+                MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+            e.Cancel = true;
+        }
+
+        base.OnFormClosing(e);
+    }
+
+    private void BuildLayout(string initialName)
+    {
+        var layout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Padding = new Padding(12)
+        };
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90F));
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+
+        _nameTextBox.Dock = DockStyle.Fill;
+        _nameTextBox.RightToLeft = RightToLeft.Yes;
+        _nameTextBox.Text = initialName;
+
+        layout.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "×©× ×ª×’×™×ª",
+            TextAlign = ContentAlignment.MiddleRight
+        }, 0, 0);
+        layout.Controls.Add(_nameTextBox, 1, 0);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft
+        };
+        var okButton = new Button
+        {
+            Text = "×©×ž×•×¨",
+            DialogResult = DialogResult.OK,
+            Width = 90
+        };
+        var cancelButton = new Button
+        {
+            Text = "×‘×™×˜×•×œ",
+            DialogResult = DialogResult.Cancel,
+            Width = 90
+        };
+        buttons.Controls.Add(okButton);
+        buttons.Controls.Add(cancelButton);
+        layout.Controls.Add(buttons, 1, 1);
+
+        Controls.Add(layout);
+        AcceptButton = okButton;
+        CancelButton = cancelButton;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\TagAssignmentForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class TagAssignmentForm : Form
+{
+    private readonly CheckedListBox _tagsListBox = new();
+
+    public TagAssignmentForm(string itemTopic, IReadOnlyList<TagModel> availableTags, IReadOnlyCollection<int> selectedTagIds)
+    {
+        Text = "×©×™×•×š ×ª×’×™×•×ª";
+        StartPosition = FormStartPosition.CenterParent;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(420, 430);
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+        BuildLayout(itemTopic, availableTags, selectedTagIds);
+    }
+
+    public IReadOnlyList<int> SelectedTagIds
+    {
+        get
+        {
+            return _tagsListBox.CheckedItems
+                .OfType<TagModel>()
+                .Select(tag => tag.Id)
+                .OrderBy(id => id)
+                .ToArray();
+        }
+    }
+
+    private void BuildLayout(string itemTopic, IReadOnlyList<TagModel> availableTags, IReadOnlyCollection<int> selectedTagIds)
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(12)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 44F));
+
+        root.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = $"×›×¨×˜×™×¡: {itemTopic}",
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font(Font, FontStyle.Bold)
+        }, 0, 0);
+
+        _tagsListBox.Dock = DockStyle.Fill;
+        _tagsListBox.BorderStyle = BorderStyle.FixedSingle;
+        _tagsListBox.CheckOnClick = true;
+        foreach (var tag in availableTags)
+        {
+            var index = _tagsListBox.Items.Add(tag);
+            if (selectedTagIds.Contains(tag.Id))
+            {
+                _tagsListBox.SetItemChecked(index, true);
+            }
+        }
+
+        root.Controls.Add(_tagsListBox, 0, 1);
+
+        var buttons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft
+        };
+        var okButton = new Button
+        {
+            Text = "×©×ž×•×¨",
+            DialogResult = DialogResult.OK,
+            Width = 90
+        };
+        var cancelButton = new Button
+        {
+            Text = "×‘×™×˜×•×œ",
+            DialogResult = DialogResult.Cancel,
+            Width = 90
+        };
+
+        buttons.Controls.Add(okButton);
+        buttons.Controls.Add(cancelButton);
+        root.Controls.Add(buttons, 0, 2);
+
+        Controls.Add(root);
+        AcceptButton = okButton;
+        CancelButton = cancelButton;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\StudyCardControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class StudyCardControl : UserControl
+{
+    private readonly StudyItemModel _item;
+
+    public event EventHandler<ReviewRating>? RatingClicked;
+    public event EventHandler<int>? EditClicked;
+    public event EventHandler<int>? DeleteClicked;
+    public event EventHandler<int>? TagsClicked;
+
+    public StudyCardControl(StudyItemModel item)
+    {
+        _item = item;
+        BackColor = ClassicPalette.CardBackground;
+        Margin = new Padding(8, 6, 8, 6);
+        Padding = new Padding(10);
+        Height = 356;
+        MinimumSize = new Size(620, 356);
+        RightToLeft = RightToLeft.Yes;
+
+        BuildLayout();
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        using var outerPen = new Pen(ClassicPalette.Teal, 2F);
+        using var innerPen = new Pen(ClassicPalette.TealLight, 1F);
+        e.Graphics.DrawRectangle(outerPen, 0, 0, Width - 1, Height - 1);
+        e.Graphics.DrawRectangle(innerPen, 3, 3, Width - 7, Height - 7);
+    }
+
+    private void BuildLayout()
+    {
+        var rootPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 34,
+            BackColor = ClassicPalette.Teal
+        };
+
+        var dateLabel = new Label
+        {
+            Dock = DockStyle.Left,
+            Width = 120,
+            Text = _item.DueDate.ToString("dd/MM/yyyy"),
+            ForeColor = Color.White,
+            TextAlign = ContentAlignment.MiddleLeft,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var pathLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = _item.SubjectPath.Replace(" > ", " / ", StringComparison.Ordinal),
+            ForeColor = Color.White,
+            Font = new Font(Font, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        headerPanel.Controls.Add(pathLabel);
+        headerPanel.Controls.Add(dateLabel);
+
+        var topicLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = _item.Topic,
+            Font = new Font(Font, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var tagsPanel = CreateTagsPanel();
+        var questionSection = CreateSection("×©××œ×”", _item.Question, 80);
+        var answerSection = CreateSection("×ª×©×•×‘×”", _item.Answer, 80);
+
+        var metaLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 46,
+            ColumnCount = 4,
+            RowCount = 2,
+            RightToLeft = RightToLeft.Yes
+        };
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+
+        metaLayout.Controls.Add(CreateMetaLabel($"×ª××¨×™×š ×™×¦×™×¨×”: {_item.CreatedAt:dd/MM/yyyy}"), 0, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"×—×–×¨×”: {(_item.LastRating.Length == 0 ? "-" : TranslateRating(_item.LastRating))}"), 1, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"×ž×¨×•×•×—: {_item.IntervalDays:0.#} ×™×ž×™×"), 2, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"EF: {_item.EaseFactor:0.00}"), 3, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"×©×œ×‘: {_item.Level}"), 0, 1);
+        metaLayout.Controls.Add(CreateMetaLabel($"×—×–×¨×•×ª: {_item.TotalReviews}"), 1, 1);
+        metaLayout.Controls.Add(CreateMetaLabel($"×§×•×©×™: {TranslateDifficulty(_item.Difficulty)}"), 2, 1);
+        metaLayout.Controls.Add(CreateMetaLabel(_item.IsMastered ? "× ×œ×ž×“ ×”×™×˜×‘" : "×‘×ª×”×œ×™×š"), 3, 1);
+
+        var actionsPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var manageFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Left,
+            Width = 252,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var deleteButton = new Button
+        {
+            Text = "×ž×—×§",
+            Width = 74,
+            Height = 26
+        };
+        deleteButton.Click += (_, _) => DeleteClicked?.Invoke(this, _item.Id);
+
+        var editButton = new Button
+        {
+            Text = "×¢×¨×•×š",
+            Width = 74,
+            Height = 26
+        };
+        editButton.Click += (_, _) => EditClicked?.Invoke(this, _item.Id);
+
+        var tagsButton = new Button
+        {
+            Text = "×ª×’×™×•×ª",
+            Width = 74,
+            Height = 26
+        };
+        tagsButton.Click += (_, _) => TagsClicked?.Invoke(this, _item.Id);
+
+        manageFlow.Controls.Add(deleteButton);
+        manageFlow.Controls.Add(editButton);
+        manageFlow.Controls.Add(tagsButton);
+
+        var ratingsFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ratingsFlow.Controls.Add(CreateRatingButton("×ž×¦×•×™×Ÿ", ReviewRating.Perfect, Color.FromArgb(202, 222, 240)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×˜×•×‘", ReviewRating.Easy, Color.FromArgb(206, 232, 234)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×‘×¡×“×¨", ReviewRating.Good, Color.FromArgb(221, 235, 210)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×—×œ×©", ReviewRating.Hard, Color.FromArgb(240, 228, 204)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×’×¨×•×¢", ReviewRating.Again, Color.FromArgb(241, 216, 208)));
+
+        actionsPanel.Controls.Add(ratingsFlow);
+        actionsPanel.Controls.Add(manageFlow);
+
+        rootPanel.Controls.Add(actionsPanel);
+        rootPanel.Controls.Add(metaLayout);
+        rootPanel.Controls.Add(answerSection);
+        rootPanel.Controls.Add(questionSection);
+        rootPanel.Controls.Add(tagsPanel);
+        rootPanel.Controls.Add(topicLabel);
+        rootPanel.Controls.Add(headerPanel);
+
+        Controls.Add(rootPanel);
+    }
+
+    private Button CreateRatingButton(string text, ReviewRating rating, Color backColor)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 84,
+            Height = 28,
+            BackColor = backColor
+        };
+        button.Click += (_, _) => RatingClicked?.Invoke(this, rating);
+        return button;
+    }
+
+    private Control CreateTagsPanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var caption = new Label
+        {
+            Dock = DockStyle.Right,
+            Width = 64,
+            Text = "×ª×’×™×•×ª:",
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font(Font, FontStyle.Bold),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var tagsText = _item.Tags.Count == 0
+            ? "×œ×œ× ×ª×’×™×•×ª"
+            : string.Join(" | ", _item.Tags.Select(tag => tag.Name));
+
+        var valueLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = tagsText,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        panel.Controls.Add(valueLabel);
+        panel.Controls.Add(caption);
+        return panel;
+    }
+
+    private static Control CreateSection(string caption, string text, int textHeight)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = textHeight + 24,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 20,
+            Text = caption,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var textBox = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ReadOnly = true,
+            Text = text,
+            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        panel.Controls.Add(textBox);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private static Label CreateMetaLabel(string text)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = text,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
+    private static string TranslateRating(string value)
+    {
+        return value switch
+        {
+            "Again" => "×’×¨×•×¢",
+            "Hard" => "×—×œ×©",
+            "Good" => "×‘×¡×“×¨",
+            "Easy" => "×˜×•×‘",
+            "Perfect" => "×ž×¦×•×™×Ÿ",
+            _ => value
+        };
+    }
+
+    private static string TranslateDifficulty(StudyDifficulty difficulty)
+    {
+        return difficulty switch
+        {
+            StudyDifficulty.Easy => "×§×œ×”",
+            StudyDifficulty.Medium => "×‘×™× ×•× ×™×ª",
+            StudyDifficulty.Hard => "×§×©×”",
+            _ => "-"
+        };
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\MainForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class MainForm : Form
+{
+    private const string DummyNodeText = "...";
+
+    private readonly AppDatabase _database;
+    private readonly TreeView _subjectTreeView = new();
+    private readonly FlowLayoutPanel _cardPanel = new();
+    private readonly StatusViewControl _statusView = new();
+    private readonly SearchFilterControl _searchFilterView = new();
+    private readonly ReviewFilterControl _reviewFilterView = new();
+    private readonly TagsManagerControl _tagsManagerView = new();
+    private readonly Panel _cardsWorkspace = new();
+    private readonly Label _contentTitleLabel = new();
+    private readonly ToolStripStatusLabel _statusLabel = new();
+    private readonly ToolStripMenuItem _questionsTabItem = new();
+    private readonly ToolStripMenuItem _tagsTabItem = new();
+    private readonly ToolStripMenuItem _searchTabItem = new();
+    private readonly ToolStripMenuItem _reviewTabItem = new();
+    private readonly ToolStripMenuItem _statusTabItem = new();
+    private readonly TanakhVerificationRequest? _verificationRequest;
+    private readonly CoreVerificationRequest? _coreVerificationRequest;
+
+    private int? _selectedSubjectId;
+    private bool _verificationStarted;
+    private MainWorkspaceMode _currentWorkspace = MainWorkspaceMode.Questions;
+
+    public MainForm(AppDatabase database, TanakhVerificationRequest? verificationRequest = null, CoreVerificationRequest? coreVerificationRequest = null)
+    {
+        _database = database;
+        _verificationRequest = verificationRequest;
+        _coreVerificationRequest = coreVerificationRequest;
+
+        Text = "×ž×¢×¨×›×ª ×—×–×¨×•×ª";
+        StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(1280, 820);
+        Size = new Size(1500, 940);
+        BackColor = ClassicPalette.WindowBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+
+        BuildLayout();
+        WireEvents();
+        Load += (_, _) => InitializeScreen();
+    }
+
+    private void BuildLayout()
+    {
+        SuspendLayout();
+        Controls.Add(CreateMainArea());
+        Controls.Add(CreateTopChrome());
+        Controls.Add(CreateStatusStrip());
+        ResumeLayout(true);
+    }
+
+    private void WireEvents()
+    {
+        _subjectTreeView.BeforeExpand += (_, e) => HandleTreeBeforeExpand(e);
+        _subjectTreeView.AfterSelect += (_, _) => HandleTreeSelection();
+
+        _searchFilterView.SearchRequested += (_, _) => RunSearch();
+        _searchFilterView.ClearRequested += (_, _) =>
+        {
+            PopulateCards(Array.Empty<StudyItemModel>());
+            _searchFilterView.SetResultSummary("××™×Ÿ ×ª×•×¦××•×ª ×ž×•×¦×’×•×ª.");
+            _statusLabel.Text = "×”×—×™×¤×•×© ××•×¤×¡.";
+        };
+
+        _reviewFilterView.ReviewRequested += (_, _) => RunReview();
+        _reviewFilterView.ResetRequested += (_, _) => RunReview();
+
+        _tagsManagerView.AddTagRequested += (_, _) => CreateTag();
+        _tagsManagerView.EditTagRequested += (_, tag) => EditTag(tag);
+        _tagsManagerView.DeleteTagRequested += (_, tag) => DeleteTag(tag);
+        _tagsManagerView.FilterByTagRequested += (_, tag) => FilterByTag(tag);
+
+        _cardPanel.SizeChanged += (_, _) => ResizeCards();
+    }
+
+    private Control CreateTopChrome()
+    {
+        var host = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 106,
+            AutoSize = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = ClassicPalette.ToolbarBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+
+        ApplyMirroredRtlWhenAvailable(host);
+        host.Controls.Add(CreateTabsBar(), 0, 0);
+        host.Controls.Add(CreateFormattingToolbar(), 0, 1);
+        return host;
+    }
+
+    private Control CreateTabsBar()
+    {
+        var menu = new MenuStrip
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = 58,
+            Stretch = true,
+            RenderMode = ToolStripRenderMode.System,
+            GripStyle = ToolStripGripStyle.Hidden,
+            BackColor = ClassicPalette.ToolbarBackground,
+            ForeColor = Color.White,
+            Padding = new Padding(8, 12, 8, 10),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(menu);
+        menu.Items.AddRange(
+        [
+            CreateTopTab(_questionsTabItem, "×©××œ×•×ª", (_, _) => ShowStudyCards()),
+            CreateTopTab(_tagsTabItem, "×ª×’×™×•×ª", (_, _) => ShowTagsView()),
+            CreateTopTab(_searchTabItem, "×—×™×¤×•×©", (_, _) => ShowSearchView()),
+            CreateTopTab(_reviewTabItem, "×—×–×¨×” ×™×•×ž×™×ª", (_, _) => ShowReviewView()),
+            CreateTopTab(_statusTabItem, "×ž×¦×‘", (_, _) => ShowStatusView()),
+            CreateTopTab(new ToolStripMenuItem(), "×’×™×‘×•×™", (_, _) => BackupDatabase()),
+            CreateTopTab(new ToolStripMenuItem(), "×”×’×“×¨×•×ª", (_, _) => ShowPlaceholder("×”×’×“×¨×•×ª")),
+            CreateTopTab(new ToolStripMenuItem(), "×¢×–×¨×”", (_, _) => ShowHelp()),
+            CreateTopTab(new ToolStripMenuItem(), "××•×“×•×ª", (_, _) => ShowAbout())
+        ]);
+
+        return menu;
+    }
+
+    private Control CreateFormattingToolbar()
+    {
+        var toolbar = new ToolStrip
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = 48,
+            Stretch = true,
+            GripStyle = ToolStripGripStyle.Hidden,
+            RenderMode = ToolStripRenderMode.System,
+            BackColor = Color.FromArgb(127, 191, 184),
+            Padding = new Padding(8, 8, 8, 8),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes,
+            LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow,
+            CanOverflow = false
+        };
+
+        ApplyMirroredRtlWhenAvailable(toolbar);
+        toolbar.Items.Add(CreateFormatCombo());
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("×™×ž×™×Ÿ"));
+        toolbar.Items.Add(CreateFormatButton("×ž×¨×›×–"));
+        toolbar.Items.Add(CreateFormatButton("×©×ž××œ"));
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("U", new Font("Microsoft Sans Serif", 9F, FontStyle.Bold | FontStyle.Underline)));
+        toolbar.Items.Add(CreateFormatButton("I", new Font("Times New Roman", 10F, FontStyle.Bold | FontStyle.Italic)));
+        toolbar.Items.Add(CreateFormatButton("B", new Font("Microsoft Sans Serif", 10F, FontStyle.Bold)));
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("16"));
+        toolbar.Items.Add(CreateFormatButton("14"));
+        toolbar.Items.Add(CreateFormatButton("12"));
+        return toolbar;
+    }
+
+    private Control CreateMainArea()
+    {
+        var container = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.PanelBackground,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(container);
+        container.Controls.Add(CreateContentPanel());
+        container.Controls.Add(CreateTreePanel());
+        return container;
+    }
+
+    private Control CreateTreePanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 330,
+            BackColor = ClassicPalette.PanelBackground,
+            Padding = new Padding(6),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(panel);
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×¡×¤×¨×™×™×”",
+            Font = new Font(Font, FontStyle.Bold),
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _subjectTreeView.Dock = DockStyle.Fill;
+        _subjectTreeView.BorderStyle = BorderStyle.FixedSingle;
+        _subjectTreeView.HideSelection = false;
+        _subjectTreeView.BackColor = Color.White;
+        _subjectTreeView.RightToLeft = RightToLeft.Yes;
+
+        panel.Controls.Add(_subjectTreeView);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private Control CreateContentPanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.PanelBackground,
+            Padding = new Padding(6),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(panel);
+
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 36,
+            BackColor = ClassicPalette.Teal,
+            BorderStyle = BorderStyle.FixedSingle,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var headerActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Left,
+            Width = 320,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        headerActions.Controls.Add(CreateHeaderActionButton("×”×“×¤×¡×”", (_, _) => ExportPrintRange()));
+        headerActions.Controls.Add(CreateHeaderActionButton("×™×™×¦×•× CSV", (_, _) => ExportCsv()));
+        headerActions.Controls.Add(CreateHeaderActionButton("×›×¨×˜×™×¡ ×—×“×©", (_, _) => OpenAddDialog()));
+
+        _contentTitleLabel.Dock = DockStyle.Fill;
+        _contentTitleLabel.Font = new Font(Font, FontStyle.Bold);
+        _contentTitleLabel.ForeColor = Color.White;
+        _contentTitleLabel.TextAlign = ContentAlignment.MiddleRight;
+        _contentTitleLabel.RightToLeft = RightToLeft.Yes;
+
+        headerPanel.Controls.Add(headerActions);
+        headerPanel.Controls.Add(_contentTitleLabel);
+
+        _cardPanel.Dock = DockStyle.Fill;
+        _cardPanel.AutoScroll = true;
+        _cardPanel.FlowDirection = FlowDirection.TopDown;
+        _cardPanel.WrapContents = false;
+        _cardPanel.BackColor = ClassicPalette.PanelBackground;
+        _cardPanel.RightToLeft = RightToLeft.Yes;
+
+        _cardsWorkspace.Dock = DockStyle.Fill;
+        _cardsWorkspace.BackColor = ClassicPalette.PanelBackground;
+        _cardsWorkspace.Controls.Add(_cardPanel);
+        _cardsWorkspace.Controls.Add(_reviewFilterView);
+        _cardsWorkspace.Controls.Add(_searchFilterView);
+
+        _searchFilterView.Visible = false;
+        _reviewFilterView.Visible = false;
+
+        _statusView.Dock = DockStyle.Fill;
+        _statusView.Visible = false;
+
+        _tagsManagerView.Dock = DockStyle.Fill;
+        _tagsManagerView.Visible = false;
+
+        panel.Controls.Add(_cardsWorkspace);
+        panel.Controls.Add(_statusView);
+        panel.Controls.Add(_tagsManagerView);
+        panel.Controls.Add(headerPanel);
+        return panel;
+    }
+
+    private StatusStrip CreateStatusStrip()
+    {
+        var statusStrip = new StatusStrip
+        {
+            Dock = DockStyle.Bottom,
+            RenderMode = ToolStripRenderMode.System,
+            RightToLeft = RightToLeft.Yes,
+            SizingGrip = false
+        };
+
+        ApplyMirroredRtlWhenAvailable(statusStrip);
+        _statusLabel.Text = "×ž×•×›×Ÿ";
+        statusStrip.Items.Add(_statusLabel);
+        return statusStrip;
+    }
+
+    private void InitializeScreen()
+    {
+        AppendStartupLog("InitializeScreen start");
+        ReloadTree();
+        RefreshTagBindings();
+        _subjectTreeView.SelectedNode = null;
+        _selectedSubjectId = null;
+        ShowStudyCards();
+        AppendStartupLog($"InitializeScreen complete | root nodes={_subjectTreeView.Nodes.Count}");
+        StartPendingVerificationIfNeeded();
+    }
+
+    private void StartPendingVerificationIfNeeded()
+    {
+        if (_verificationStarted || (_verificationRequest is null && _coreVerificationRequest is null) || IsDisposed)
+        {
+            return;
+        }
+
+        _verificationStarted = true;
+        if (_coreVerificationRequest is not null)
+        {
+            BeginInvoke(new Action(() => _ = RunCoreVerificationAsync(_coreVerificationRequest)));
+            return;
+        }
+
+        BeginInvoke(new Action(() => _ = RunTanakhVerificationAsync(
+            _verificationRequest!.OverviewScreenshotPath,
+            _verificationRequest.DetailScreenshotPath,
+            _verificationRequest.ReportPath)));
+    }
+
+    private void ReloadTree()
+    {
+        _subjectTreeView.BeginUpdate();
+        _subjectTreeView.Nodes.Clear();
+        PopulateTreeNodes(_subjectTreeView.Nodes, _database.GetTreeChildren(null));
+        _subjectTreeView.EndUpdate();
+    }
+
+    private void RefreshTagBindings()
+    {
+        var tags = _database.GetTags();
+        _searchFilterView.BindTags(tags);
+        _reviewFilterView.BindTags(tags);
+        _tagsManagerView.BindTags(tags);
+    }
+
+    private void HandleTreeBeforeExpand(TreeViewCancelEventArgs e)
+    {
+        if (e.Node?.Nodes.Count == 1 && e.Node.Nodes[0].Text == DummyNodeText)
+        {
+            if (!TryPopulateTreeChildren(e.Node))
+            {
+                e.Cancel = true;
+            }
+        }
+    }
+
+    private void PopulateTreeChildren(TreeNode parentNode)
+    {
+        if (parentNode.Tag is not int parentId)
+        {
+            return;
+        }
+
+        _database.EnsureSubjectChildrenLoaded(parentId);
+        parentNode.Nodes.Clear();
+        PopulateTreeNodes(parentNode.Nodes, _database.GetTreeChildren(parentId));
+    }
+
+    private bool TryPopulateTreeChildren(TreeNode parentNode)
+    {
+        try
+        {
+            PopulateTreeChildren(parentNode);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            parentNode.Nodes.Clear();
+            parentNode.Nodes.Add(new TreeNode(DummyNodeText));
+            ShowTreeLoadError(exception);
+            return false;
+        }
+    }
+
+    private static void PopulateTreeNodes(TreeNodeCollection targetNodes, IReadOnlyList<SubjectNodeModel> subjects)
+    {
+        foreach (var subject in subjects)
+        {
+            var node = new TreeNode(subject.Name) { Tag = subject.Id };
+            if (subject.HasChildren)
+            {
+                node.Nodes.Add(new TreeNode(DummyNodeText));
+            }
+
+            targetNodes.Add(node);
+        }
+    }
+
+    private void HandleTreeSelection()
+    {
+        _selectedSubjectId = _subjectTreeView.SelectedNode?.Tag is int subjectId ? subjectId : null;
+        UpdateSelectedNodeLabels();
+
+        switch (_currentWorkspace)
+        {
+            case MainWorkspaceMode.Questions:
+                ShowStudyCards();
+                break;
+            case MainWorkspaceMode.Search when _searchFilterView.LimitToSelectedNode:
+                RunSearch();
+                break;
+            case MainWorkspaceMode.Review when _reviewFilterView.RestrictToSelectedNode:
+                RunReview();
+                break;
+        }
+    }
+
+    private void UpdateSelectedNodeLabels()
+    {
+        var path = _selectedSubjectId.HasValue ? TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value)) : "×›×œ ×”×¡×¤×¨×™×™×”";
+        _searchFilterView.SetSelectedNodePath(path);
+        _reviewFilterView.SetSelectedNodePath(path);
+    }
+
+    private void ShowStudyCards()
+    {
+        _currentWorkspace = MainWorkspaceMode.Questions;
+        ShowCardsWorkspace();
+        _searchFilterView.Visible = false;
+        _reviewFilterView.Visible = false;
+        ActivateTab(_questionsTabItem);
+
+        var items = _database.GetStudyItemsForSubject(_selectedSubjectId);
+        _contentTitleLabel.Text = _selectedSubjectId.HasValue
+            ? $"×©××œ×•×ª / {TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value))}"
+            : "×©××œ×•×ª / ×›×œ ×”×¡×¤×¨×™×™×”";
+
+        PopulateCards(items);
+        _statusLabel.Text = $"× ×˜×¢× ×• {items.Count} ×›×¨×˜×™×¡×™× | ×œ×‘×™×¦×•×¢ ×›×¢×ª: {items.Count(item => item.IsDue)}";
+    }
+
+    private void ShowSearchView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Search;
+        ShowCardsWorkspace();
+        _searchFilterView.Visible = true;
+        _reviewFilterView.Visible = false;
+        ActivateTab(_searchTabItem);
+        _contentTitleLabel.Text = "×—×™×¤×•×© / ×ª×•×¦××•×ª";
+        UpdateSelectedNodeLabels();
+        RunSearch();
+    }
+
+    private void ShowReviewView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Review;
+        ShowCardsWorkspace();
+        _reviewFilterView.Visible = true;
+        _searchFilterView.Visible = false;
+        ActivateTab(_reviewTabItem);
+        _contentTitleLabel.Text = "×—×–×¨×” ×™×•×ž×™×ª / ×ž×¡×•× × ×ª";
+        UpdateSelectedNodeLabels();
+        RunReview();
+    }
+
+    private void ShowTagsView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Tags;
+        _cardsWorkspace.Visible = false;
+        _statusView.Visible = false;
+        _tagsManagerView.Visible = true;
+        RefreshTagBindings();
+        ActivateTab(_tagsTabItem);
+        _contentTitleLabel.Text = "×ª×’×™×•×ª / × ×™×”×•×œ";
+        _statusLabel.Text = "× ×™×”×•×œ ×ª×’×™×•×ª ×¤×¢×™×œ.";
+    }
+
+    private void ShowStatusView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Status;
+        _cardsWorkspace.Visible = false;
+        _tagsManagerView.Visible = false;
+        _statusView.Visible = true;
+        ActivateTab(_statusTabItem);
+        _contentTitleLabel.Text = "×ž×¦×‘ / ×¡×˜×˜×™×¡×˜×™×§×”";
+
+        var stats = _database.GetDashboardStats();
+        _statusView.Bind(stats);
+        _statusLabel.Text = $"×¡×”\"×› {stats.TotalItems} ×¤×¨×™×˜×™× | ×œ×‘×™×¦×•×¢ ×”×™×•× {stats.DueToday} | ×©×™×ž×•×¨ {stats.RetentionRate:0.#}%";
+    }
+
+    private void ShowCardsWorkspace()
+    {
+        _cardsWorkspace.Visible = true;
+        _statusView.Visible = false;
+        _tagsManagerView.Visible = false;
+    }
+
+    private void RunSearch()
+    {
+        var items = _database.SearchStudyItems(new StudySearchQuery
+        {
+            SearchText = _searchFilterView.SearchText,
+            SubjectId = _selectedSubjectId,
+            TagId = _searchFilterView.SelectedTagId,
+            LimitToSelectedNode = _searchFilterView.LimitToSelectedNode
+        });
+
+        PopulateCards(items);
+        _searchFilterView.SetResultSummary($"× ×ž×¦××• {items.Count} ×›×¨×˜×™×¡×™×");
+        _statusLabel.Text = $"×—×™×¤×•×© ×”×•×©×œ×: {items.Count} ×ª×•×¦××•×ª.";
+    }
+
+    private void RunReview()
+    {
+        var items = _database.GetStudyItemsForReview(new StudyReviewFilter
+        {
+            SubjectId = _selectedSubjectId,
+            TagId = _reviewFilterView.SelectedTagId,
+            RestrictToSelectedNode = _reviewFilterView.RestrictToSelectedNode,
+            DueOnly = _reviewFilterView.DueOnly,
+            FailedRecentlyOnly = _reviewFilterView.FailedRecentlyOnly,
+            Difficulty = _reviewFilterView.SelectedDifficulty
+        });
+
+        PopulateCards(items);
+        _reviewFilterView.SetResultSummary($"×œ×ª×¨×’×•×œ ×›×¢×ª: {items.Count} ×›×¨×˜×™×¡×™×");
+        _statusLabel.Text = $"×—×–×¨×” ×ž×¡×•× × ×ª: {items.Count} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void PopulateCards(IReadOnlyList<StudyItemModel> items)
+    {
+        _cardPanel.SuspendLayout();
+        foreach (Control control in _cardPanel.Controls)
+        {
+            control.Dispose();
+        }
+
+        _cardPanel.Controls.Clear();
+
+        if (items.Count == 0)
+        {
+            var emptyLabel = new Label
+            {
+                AutoSize = false,
+                Width = Math.Max(620, _cardPanel.ClientSize.Width - 30),
+                Height = 72,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = ClassicPalette.CardBackground,
+                Text = "××™×Ÿ ×›×¨×˜×™×¡×™× ×‘×ª×¦×•×’×” ×–×•. ×‘×—×¨×• ×¢× ×£ ××—×¨, ×”×¤×¢×™×œ×• ×¡×™× ×•×Ÿ ××—×¨ ××• ×”×•×¡×™×¤×• ×›×¨×˜×™×¡ ×—×“×©.",
+                TextAlign = ContentAlignment.MiddleCenter,
+                RightToLeft = RightToLeft.Yes
+            };
+
+            _cardPanel.Controls.Add(emptyLabel);
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                var card = new StudyCardControl(item)
+                {
+                    Width = GetCardWidth()
+                };
+
+                card.RatingClicked += (_, rating) => HandleRating(item.Id, rating);
+                card.EditClicked += (_, itemId) => OpenEditDialog(itemId);
+                card.DeleteClicked += (_, itemId) => DeleteCard(itemId);
+                card.TagsClicked += (_, itemId) => OpenTagsDialog(itemId);
+                _cardPanel.Controls.Add(card);
+            }
+        }
+
+        _cardPanel.ResumeLayout();
+    }
+
+    private void ResizeCards()
+    {
+        var width = GetCardWidth();
+        foreach (Control control in _cardPanel.Controls)
+        {
+            control.Width = width;
+        }
+    }
+
+    private int GetCardWidth()
+    {
+        return Math.Max(620, _cardPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24);
+    }
+
+    private void HandleRating(int itemId, ReviewRating rating)
+    {
+        var updated = _database.RateStudyItem(itemId, rating);
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ '{updated.Topic}' ×¡×•×ž×Ÿ ×›-{TranslateRating(rating)}. ×”×ª××¨×™×š ×”×‘×: {updated.DueDate:dd/MM/yyyy}";
+        RefreshCurrentView();
+    }
+
+    private void RefreshCurrentView()
+    {
+        switch (_currentWorkspace)
+        {
+            case MainWorkspaceMode.Questions:
+                ShowStudyCards();
+                break;
+            case MainWorkspaceMode.Search:
+                ShowSearchView();
+                break;
+            case MainWorkspaceMode.Review:
+                ShowReviewView();
+                break;
+            case MainWorkspaceMode.Tags:
+                ShowTagsView();
+                break;
+            case MainWorkspaceMode.Status:
+                ShowStatusView();
+                break;
+        }
+    }
+
+    private void OpenAddDialog()
+    {
+        var subjects = _database.GetAssignableSubjects();
+        using var dialog = new AddStudyItemForm(subjects, _selectedSubjectId);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.AddStudyItem(dialog.SelectedSubjectId, dialog.Topic, dialog.Question, dialog.Answer);
+        ReloadTree();
+        SelectNodeBySubjectId(dialog.SelectedSubjectId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"× ×•×¡×£ ×›×¨×˜×™×¡ ×—×“×©: {dialog.Topic}";
+    }
+
+    private void OpenEditDialog(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var subjects = _database.GetAssignableSubjects();
+        using var dialog = new AddStudyItemForm(subjects, item.SubjectId, item);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.UpdateStudyItem(itemId, dialog.SelectedSubjectId, dialog.Topic, dialog.Question, dialog.Answer);
+        ReloadTree();
+        SelectNodeBySubjectId(dialog.SelectedSubjectId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ ×¢×•×“×›×Ÿ: {dialog.Topic}";
+    }
+
+    private void OpenTagsDialog(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var tags = _database.GetTags();
+        using var dialog = new TagAssignmentForm(item.Topic, tags, item.Tags.Select(tag => tag.Id).ToArray());
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.SetTagsForStudyItem(itemId, dialog.SelectedTagIds);
+        RefreshTagBindings();
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×ª×’×™×•×ª ×¢×•×“×›× ×• ×¢×‘×•×¨: {item.Topic}";
+    }
+
+    private void DeleteCard(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var result = MessageBox.Show(
+            this,
+            $"×œ×ž×—×•×§ ××ª '{item.Topic}'?",
+            "×ž×—×™×§×ª ×›×¨×˜×™×¡",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _database.DeleteStudyItem(itemId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ × ×ž×—×§: {item.Topic}";
+    }
+
+    private void CreateTag()
+    {
+        using var dialog = new TagEditForm("×ª×’×™×ª ×—×“×©×”");
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.AddTag(dialog.TagName);
+        RefreshTagBindings();
+        _statusLabel.Text = $"×”×ª×’×™×ª × ×•×¡×¤×”: {dialog.TagName}";
+    }
+
+    private void EditTag(TagModel tag)
+    {
+        using var dialog = new TagEditForm("×¢×¨×™×›×ª ×ª×’×™×ª", tag.Name);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.UpdateTag(tag.Id, dialog.TagName);
+        RefreshTagBindings();
+        _statusLabel.Text = $"×”×ª×’×™×ª ×¢×•×“×›× ×”: {dialog.TagName}";
+    }
+
+    private void DeleteTag(TagModel tag)
+    {
+        var result = MessageBox.Show(
+            this,
+            $"×œ×ž×—×•×§ ××ª ×”×ª×’×™×ª '{tag.Name}'?",
+            "×ž×—×™×§×ª ×ª×’×™×ª",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _database.DeleteTag(tag.Id);
+        RefreshTagBindings();
+        _statusLabel.Text = $"×”×ª×’×™×ª × ×ž×—×§×”: {tag.Name}";
+    }
+
+    private void FilterByTag(TagModel tag)
+    {
+        _currentWorkspace = MainWorkspaceMode.Search;
+        ShowCardsWorkspace();
+        _searchFilterView.Visible = true;
+        _reviewFilterView.Visible = false;
+        ActivateTab(_searchTabItem);
+        _contentTitleLabel.Text = $"×—×™×¤×•×© / ×ª×’×™×ª {tag.Name}";
+
+        var items = _database.SearchStudyItems(new StudySearchQuery
+        {
+            SearchText = string.Empty,
+            SubjectId = _selectedSubjectId,
+            TagId = tag.Id,
+            LimitToSelectedNode = false
+        });
+
+        PopulateCards(items);
+        _searchFilterView.SetResultSummary($"×”×ª×’×™×ª '{tag.Name}' ×ž×—×–×™×¨×” {items.Count} ×›×¨×˜×™×¡×™×");
+        _statusLabel.Text = $"×¡×™× ×•×Ÿ ×œ×¤×™ ×ª×’×™×ª: {tag.Name}";
+    }
+
+    private void BackupDatabase()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "SQLite database (*.db)|*.db",
+            FileName = $"×’×™×‘×•×™-{DateTime.Today:yyyyMMdd}.db",
+            Title = "×’×™×‘×•×™ ×ž×¡×“ × ×ª×•× ×™×"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.BackupDatabase(dialog.FileName);
+        _statusLabel.Text = "×”×’×™×‘×•×™ × ×©×ž×¨ ×‘×”×¦×œ×—×”";
+    }
+
+    private void ExportCsv()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "CSV files (*.csv)|*.csv",
+            FileName = "×™×™×¦×•×-×›×¨×˜×™×¡×™×.csv",
+            Title = "×™×™×¦×•× ×›×¨×˜×™×¡×™× ×œ-CSV"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.ExportToCsv(dialog.FileName);
+        _statusLabel.Text = "×§×•×‘×¥ ×”-CSV × ×©×ž×¨ ×‘×”×¦×œ×—×”";
+    }
+
+    private void ExportPrintRange()
+    {
+        using var rangeForm = new PrintRangeForm();
+        PrepareDialog(rangeForm);
+        if (rangeForm.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "HTML files (*.html)|*.html",
+            FileName = $"×”×“×¤×¡×”-{rangeForm.StartDate:yyyyMMdd}-{rangeForm.EndDate:yyyyMMdd}.html",
+            Title = "×™×™×¦×•× ×§×•×‘×¥ HTML ×œ×”×“×¤×¡×”"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.ExportPrintableHtml(rangeForm.StartDate, rangeForm.EndDate, dialog.FileName);
+        _statusLabel.Text = "×§×•×‘×¥ ×”×”×“×¤×¡×” × ×©×ž×¨ ×‘×”×¦×œ×—×”";
+    }
+
+    private void ShowPlaceholder(string moduleName)
+    {
+        _statusLabel.Text = $"×”×ž×•×“×•×œ '{moduleName}' ×¢×“×™×™×Ÿ ×œ× ×—×•×‘×¨.";
+    }
+
+    private void ShowHelp()
+    {
+        MessageBox.Show(
+            this,
+            "×œ×©×™×ž×•×© ×ž×”×™×¨:\n\n1. ×‘×—×¨×• × ×•×©× ×ž×”×¢×¥ ×”×™×ž× ×™.\n2. ×”×•×¡×™×¤×• ×›×¨×˜×™×¡×™× ××• ×¤×ª×—×• ×—×™×¤×•×©/×ª×’×™×•×ª.\n3. ×œ×”×¤×¢×œ×ª ×—×–×¨×” ×ž×¡×•× × ×ª ×¢×‘×¨×• ×œ×œ×©×•× ×™×ª ×—×–×¨×” ×™×•×ž×™×ª.\n4. × ×™×”×•×œ ×ª×’×™×•×ª ×ž×ª×‘×¦×¢ ×‘×œ×©×•× ×™×ª ×ª×’×™×•×ª ××• ×ž×ª×•×š ×›×œ ×›×¨×˜×™×¡.",
+            "×¢×–×¨×”",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    private void ShowAbout()
+    {
+        MessageBox.Show(
+            this,
+            "×ž×¢×¨×›×ª ×—×–×¨×•×ª ×ž×§×•×ž×™×ª ×œ×œ×™×ž×•×“ ×ª×•×¨×” ×¢× ×ž×¡×“ SQLite, ××œ×’×•×¨×™×ª× SM-2, ×—×™×¤×•×©, ×ª×’×™×•×ª, ×—×–×¨×” ×ž×¡×•× × ×ª ×•×§×™×©×•×¨ ×ž×œ× ×œ×¢×¥ ×”×¡×¤×¨×™×™×”.",
+            "××•×“×•×ª",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    private void SelectNodeBySubjectId(int subjectId)
+    {
+        TreeNodeCollection nodes = _subjectTreeView.Nodes;
+        TreeNode? node = null;
+
+        foreach (var subject in _database.GetSubjectLineage(subjectId))
+        {
+            node = FindNode(nodes, subject.Id);
+            if (node is null)
+            {
+                return;
+            }
+
+            if (node.Nodes.Count == 1 && node.Nodes[0].Text == DummyNodeText)
+            {
+                if (!TryPopulateTreeChildren(node))
+                {
+                    return;
+                }
+            }
+
+            nodes = node.Nodes;
+        }
+
+        if (node is not null)
+        {
+            _subjectTreeView.SelectedNode = node;
+            node.EnsureVisible();
+        }
+    }
+
+    private static TreeNode? FindNode(TreeNodeCollection nodes, int subjectId)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (node.Tag is int id && id == subjectId)
+            {
+                return node;
+            }
+
+            var child = FindNode(node.Nodes, subjectId);
+            if (child is not null)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static void PrepareDialog(Form dialog)
+    {
+        dialog.RightToLeft = RightToLeft.Yes;
+        dialog.RightToLeftLayout = false;
+        ApplyRightToLeftRecursive(dialog);
+    }
+
+    private static void ApplyRightToLeftRecursive(Control parent)
+    {
+        parent.RightToLeft = RightToLeft.Yes;
+        ApplyMirroredRtlWhenAvailable(parent);
+        foreach (Control child in parent.Controls)
+        {
+            ApplyRightToLeftRecursive(child);
+        }
+    }
+
+    private static string TranslateRating(ReviewRating rating)
+    {
+        return rating switch
+        {
+            ReviewRating.Again => "×’×¨×•×¢",
+            ReviewRating.Hard => "×—×œ×©",
+            ReviewRating.Good => "×‘×¡×“×¨",
+            ReviewRating.Easy => "×˜×•×‘",
+            ReviewRating.Perfect => "×ž×¦×•×™×Ÿ",
+            _ => string.Empty
+        };
+    }
+
+    private static string TranslatePath(string path)
+    {
+        return string.IsNullOrWhiteSpace(path)
+            ? "×›×œ ×”×¡×¤×¨×™×™×”"
+            : path.Replace(" > ", " / ", StringComparison.Ordinal);
+    }
+
+    private static ToolStripMenuItem CreateTopTab(ToolStripMenuItem item, string text, EventHandler onClick)
+    {
+        var font = new Font("Microsoft Sans Serif", 10.5F, FontStyle.Bold);
+        item.Text = text;
+        item.Font = font;
+        item.AutoSize = false;
+        item.Width = Math.Max(116, TextRenderer.MeasureText(text, font).Width + 34);
+        item.Height = 34;
+        item.Margin = new Padding(3, 0, 3, 0);
+        item.Padding = new Padding(12, 4, 12, 4);
+        item.BackColor = ClassicPalette.ToolbarBackground;
+        item.ForeColor = Color.White;
+        item.Click += onClick;
+        return item;
+    }
+
+    private static ToolStripButton CreateFormatButton(string text, Font? font = null)
+    {
+        var resolvedFont = font ?? new Font("Microsoft Sans Serif", 9.5F, FontStyle.Bold);
+        var button = new ToolStripButton
+        {
+            Text = text,
+            AutoSize = false,
+            Width = Math.Max(text.Length > 2 ? 66 : 42, TextRenderer.MeasureText(text, resolvedFont).Width + 18),
+            Height = 28,
+            Margin = new Padding(2, 0, 2, 0),
+            BackColor = Color.FromArgb(216, 242, 239),
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ForeColor = Color.Black
+        };
+
+        button.Font = resolvedFont;
+        return button;
+    }
+
+    private static ToolStripComboBox CreateFormatCombo()
+    {
+        var combo = new ToolStripComboBox
+        {
+            Width = 70,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+
+        combo.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Regular);
+        combo.Items.AddRange(["8", "10", "12", "14", "16", "18"]);
+        combo.SelectedIndex = 2;
+        return combo;
+    }
+
+    private static ToolStripSeparator CreateToolStripSeparator()
+    {
+        return new ToolStripSeparator
+        {
+            Margin = new Padding(4, 0, 4, 0)
+        };
+    }
+
+    private static Button CreateHeaderActionButton(string text, EventHandler onClick)
+    {
+        var font = new Font("Microsoft Sans Serif", 9.5F, FontStyle.Bold);
+        var button = new Button
+        {
+            Text = text,
+            Width = Math.Max(96, TextRenderer.MeasureText(text, font).Width + 22),
+            Height = 28,
+            Margin = new Padding(3, 4, 3, 3),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(208, 237, 234),
+            Font = font
+        };
+
+        button.FlatAppearance.BorderColor = Color.FromArgb(45, 117, 110);
+        button.Click += onClick;
+        return button;
+    }
+
+    private static void ApplyMirroredRtlWhenAvailable(object target)
+    {
+        if (target is Control control)
+        {
+            control.RightToLeft = RightToLeft.Yes;
+        }
+
+        var property = target.GetType().GetProperty("RightToLeftLayout");
+        if (property is not null && property.CanWrite && property.PropertyType == typeof(bool))
+        {
+            property.SetValue(target, true);
+        }
+    }
+
+    private void ActivateTab(ToolStripMenuItem activeItem)
+    {
+        foreach (var item in new[] { _questionsTabItem, _tagsTabItem, _searchTabItem, _reviewTabItem, _statusTabItem })
+        {
+            item.BackColor = item == activeItem
+                ? Color.FromArgb(72, 155, 147)
+                : ClassicPalette.ToolbarBackground;
+            item.ForeColor = Color.White;
+        }
+    }
+
+    private void ShowTreeLoadError(Exception exception)
+    {
+        MessageBox.Show(
+            this,
+            $"×œ× × ×™×ª×Ÿ ×œ×˜×¢×•×Ÿ ×›×¢×ª ××ª × ×ª×•× ×™ ×”×¡×¤×¨×™×™×”.\n\n{exception.Message}",
+            "×©×’×™××ª ×˜×¢×™× ×”",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    public async Task RunTanakhVerificationAsync(string overviewScreenshotPath, string detailScreenshotPath, string reportPath)
+    {
+        var expandedPaths = new List<string>();
+        Exception? failure = null;
+        var logPath = Path.ChangeExtension(reportPath, ".log");
+
+        try
+        {
+            await Task.Delay(1200);
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "×ª× \"×š")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª× \"×š ×œ× × ×ž×¦× ×‘×¢×¥.");
+            await ExpandNodeAsync(tanakhNode, expandedPaths);
+
+            var torahNode = FindChildNodeByText(tanakhNode, "×ª×•×¨×”")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª×•×¨×” ×œ× × ×ž×¦×.");
+            var prophetsNode = FindChildNodeByText(tanakhNode, "× ×‘×™××™×")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª × ×‘×™××™× ×œ× × ×ž×¦×.");
+            var writingsNode = FindChildNodeByText(tanakhNode, "×›×ª×•×‘×™×")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×›×ª×•×‘×™× ×œ× × ×ž×¦×.");
+
+            await ExpandNodeAsync(torahNode, expandedPaths);
+            await ExpandNodeAsync(prophetsNode, expandedPaths);
+            await ExpandNodeAsync(writingsNode, expandedPaths);
+
+            var torahBook = GetFirstRealChild(torahNode) ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¡×¤×¨ ×‘×ª×•×¨×”.");
+            await ExpandNodeAsync(torahBook, expandedPaths);
+            var torahChapter = GetFirstRealChild(torahBook) ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¨×§ ×‘×¡×¤×¨.");
+            await ExpandNodeAsync(torahChapter, expandedPaths);
+            var verseNode = GetFirstRealChild(torahChapter) ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¡×•×§ ×‘×¤×¨×§.");
+
+            _subjectTreeView.SelectedNode = tanakhNode;
+            tanakhNode.EnsureVisible();
+            await Task.Delay(600);
+            CaptureWindowScreenshot(overviewScreenshotPath);
+
+            _subjectTreeView.SelectedNode = verseNode;
+            verseNode.EnsureVisible();
+            await Task.Delay(600);
+            CaptureWindowScreenshot(detailScreenshotPath);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+            AppendVerificationLog(logPath, exception.ToString());
+        }
+        finally
+        {
+            SaveTanakhVerificationReport(reportPath, overviewScreenshotPath, detailScreenshotPath, expandedPaths, failure);
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private async Task RunCoreVerificationAsync(CoreVerificationRequest request)
+    {
+        Exception? failure = null;
+        var logPath = Path.ChangeExtension(request.ReportPath, ".log");
+        var payload = new Dictionary<string, object?>();
+
+        try
+        {
+            await Task.Delay(1200);
+
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "×ª× \"×š")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª× \"×š ×œ× × ×ž×¦× ×‘×¢×¥.");
+            await ExpandNodeAsync(tanakhNode, []);
+            var torahNode = FindChildNodeByText(tanakhNode, "×ª×•×¨×”")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª×•×¨×” ×œ× × ×ž×¦×.");
+            await ExpandNodeAsync(torahNode, []);
+
+            var bookNode = GetFirstRealChild(torahNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¡×¤×¨ ×‘×ª×•×¨×”.");
+            await ExpandNodeAsync(bookNode, []);
+
+            var chapterNode = GetFirstRealChild(bookNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¨×§ ×‘×¡×¤×¨.");
+            await ExpandNodeAsync(chapterNode, []);
+
+            var verseNode = GetFirstRealChild(chapterNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¡×•×§ ×‘×¤×¨×§.");
+            _subjectTreeView.SelectedNode = verseNode;
+            HandleTreeSelection();
+
+            var searchTagId = _database.AddTag("×××-×—×™×¤×•×©");
+            var hardTagId = _database.AddTag("×××-×§×©×”");
+            RefreshTagBindings();
+
+            var seedItems = EnsureCoreVerificationStudyItems((int)verseNode.Tag!, searchTagId, hardTagId);
+            payload["SeededItemIds"] = seedItems;
+            payload["SelectedPath"] = verseNode.FullPath;
+
+            ShowStudyCards();
+            await Task.Delay(500);
+            CaptureWindowScreenshot(request.TreeScreenshotPath);
+
+            ShowTagsView();
+            RefreshTagBindings();
+            _tagsManagerView.SelectTag(searchTagId);
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.TagsScreenshotPath);
+
+            ShowSearchView();
+            _searchFilterView.SetSearchState("××™×ž×•×ª×—×™×¤×•×©", true, searchTagId);
+            RunSearch();
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.SearchScreenshotPath);
+
+            ShowReviewView();
+            _reviewFilterView.SetFilterState(true, false, true, StudyDifficulty.Hard, hardTagId);
+            RunReview();
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.ReviewScreenshotPath);
+
+            payload["SearchTagId"] = searchTagId;
+            payload["HardTagId"] = hardTagId;
+            payload["SearchResults"] = _database.SearchStudyItems(new StudySearchQuery
+            {
+                SearchText = "××™×ž×•×ª×—×™×¤×•×©",
+                SubjectId = (int)verseNode.Tag!,
+                TagId = searchTagId,
+                LimitToSelectedNode = true
+            }).Count;
+            payload["ReviewResults"] = _database.GetStudyItemsForReview(new StudyReviewFilter
+            {
+                SubjectId = (int)verseNode.Tag!,
+                TagId = hardTagId,
+                RestrictToSelectedNode = true,
+                DueOnly = false,
+                FailedRecentlyOnly = true,
+                Difficulty = StudyDifficulty.Hard
+            }).Count;
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+            AppendVerificationLog(logPath, exception.ToString());
+        }
+        finally
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(request.ReportPath)!);
+            payload["Success"] = failure is null;
+            payload["Failure"] = failure?.ToString();
+            payload["SearchScreenshot"] = request.SearchScreenshotPath;
+            payload["TagsScreenshot"] = request.TagsScreenshotPath;
+            payload["ReviewScreenshot"] = request.ReviewScreenshotPath;
+            payload["TreeScreenshot"] = request.TreeScreenshotPath;
+
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+            File.WriteAllText(request.ReportPath, json);
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private int[] EnsureCoreVerificationStudyItems(int subjectId, int searchTagId, int hardTagId)
+    {
+        var items = _database.GetStudyItemsForSubject(subjectId).ToList();
+        if (items.Count < 3)
+        {
+            _database.AddStudyItem(subjectId, "×›×¨×˜×™×¡ ××™×ž×•×ª 1", "××™×ž×•×ª×—×™×¤×•×© ×©××œ×” ×¢×œ ×”×¤×¡×•×§ ×”× ×‘×—×¨", "×ª×©×•×‘×ª ×‘×“×™×§×” ×¨××©×•× ×”");
+            _database.AddStudyItem(subjectId, "×›×¨×˜×™×¡ ××™×ž×•×ª 2", "×›×¨×˜×™×¡ ×ž×¡×•×ž×Ÿ ×›×§×©×” ×œ×‘×“×™×§×”", "×ª×©×•×‘×ª ×‘×“×™×§×” ×©× ×™×™×”");
+            _database.AddStudyItem(subjectId, "×›×¨×˜×™×¡ ××™×ž×•×ª 3", "×›×¨×˜×™×¡ × ×•×¡×£ ×œ×¦×•×ž×ª ×”×¡×¤×¨×™×™×”", "×ª×©×•×‘×ª ×‘×“×™×§×” ×©×œ×™×©×™×ª");
+            items = _database.GetStudyItemsForSubject(subjectId).ToList();
+        }
+
+        var item1 = items.First();
+        var item2 = items.Skip(1).FirstOrDefault() ?? item1;
+        var item3 = items.Skip(2).FirstOrDefault() ?? item2;
+
+        _database.SetTagsForStudyItem(item1.Id, [searchTagId]);
+        _database.SetTagsForStudyItem(item2.Id, [hardTagId]);
+        _database.SetTagsForStudyItem(item3.Id, [searchTagId, hardTagId]);
+
+        _database.RateStudyItem(item2.Id, ReviewRating.Again);
+        _database.RateStudyItem(item2.Id, ReviewRating.Again);
+
+        return [item1.Id, item2.Id, item3.Id];
+    }
+
+    private async Task ExpandNodeAsync(TreeNode node, ICollection<string> expandedPaths)
+    {
+        _subjectTreeView.SelectedNode = node;
+        node.EnsureVisible();
+        node.Expand();
+        await Task.Delay(500);
+
+        if (node.Nodes.Count == 1 && node.Nodes[0].Text == DummyNodeText)
+        {
+            if (!TryPopulateTreeChildren(node))
+            {
+                throw new InvalidOperationException($"×œ× × ×™×ª×Ÿ ×”×™×” ×œ×”×¨×—×™×‘ ××ª '{node.Text}'.");
+            }
+        }
+
+        expandedPaths.Add(BuildTreePath(node));
+    }
+
+    private void SaveTanakhVerificationReport(string reportPath, string overviewScreenshotPath, string detailScreenshotPath, IReadOnlyCollection<string> expandedPaths, Exception? failure)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+        var requests = _database.GetSefariaRequestLog()
+            .Select(entry => new { entry.Endpoint, entry.Success, entry.Transport, entry.Message })
+            .ToArray();
+
+        var payload = new
+        {
+            Success = failure is null,
+            FailureMessage = failure?.Message,
+            OverviewScreenshot = overviewScreenshotPath,
+            DetailScreenshot = detailScreenshotPath,
+            ExpandedPaths = expandedPaths.ToArray(),
+            FetchWorked = requests.Any(entry => entry.Success && entry.Transport is "httpclient" or "node"),
+            Requests = requests
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(reportPath, json);
+    }
+
+    private void CaptureWindowScreenshot(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        TopMost = true;
+        BringToFront();
+        Activate();
+        Refresh();
+        Application.DoEvents();
+
+        using var bitmap = new Bitmap(Width, Height);
+        DrawToBitmap(bitmap, new Rectangle(Point.Empty, Size));
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        TopMost = false;
+    }
+
+    private static TreeNode? FindNodeByText(TreeNodeCollection nodes, string text)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (string.Equals(node.Text, text, StringComparison.Ordinal))
+            {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? FindChildNodeByText(TreeNode parentNode, string text)
+    {
+        foreach (TreeNode child in parentNode.Nodes)
+        {
+            if (string.Equals(child.Text, text, StringComparison.Ordinal))
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? GetFirstRealChild(TreeNode parentNode)
+    {
+        foreach (TreeNode child in parentNode.Nodes)
+        {
+            if (!string.Equals(child.Text, DummyNodeText, StringComparison.Ordinal))
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildTreePath(TreeNode node)
+    {
+        var segments = new Stack<string>();
+        TreeNode? current = node;
+        while (current is not null)
+        {
+            segments.Push(current.Text);
+            current = current.Parent;
+        }
+
+        return string.Join(" / ", segments);
+    }
+
+    private static void AppendVerificationLog(string logPath, string message)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+
+    private static void AppendStartupLog(string message)
+    {
+        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\startup-trace.log";
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+}
+
+internal enum MainWorkspaceMode
+{
+    Questions,
+    Tags,
+    Search,
+    Review,
+    Status
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\Program.cs
+========================================================================================================================
+using System.Drawing;
+using System.Text;
+
+namespace TrackerApp;
+
+internal static class Program
+{
+    [STAThread]
+    private static void Main(string[] args)
+    {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, args) => ShowFatalError(args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            var exception = args.ExceptionObject as Exception
+                ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown unhandled exception.");
+            ShowFatalError(exception);
+        };
+
+        try
+        {
+            File.AppendAllText(
+                "C:\\CodexProjects\\Tracker\\artifacts\\program-args.log",
+                $"[{DateTime.Now:HH:mm:ss}] args={string.Join(" | ", args)}{Environment.NewLine}");
+            AppendProgramLog("Main entered");
+
+            ToolStripManager.RenderMode = ToolStripManagerRenderMode.System;
+            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.SetDefaultFont(new Font("Microsoft Sans Serif", 8.25F, FontStyle.Regular, GraphicsUnit.Point));
+
+            using var database = new AppDatabase();
+            AppendProgramLog("AppDatabase created");
+            database.Initialize();
+            AppendProgramLog("AppDatabase initialized");
+
+            TanakhVerificationRequest? verificationRequest = null;
+            CoreVerificationRequest? coreVerificationRequest = null;
+            if (TryParseTanakhVerificationArgs(args, out var overviewScreenshotPath, out var detailScreenshotPath, out var reportPath))
+            {
+                verificationRequest = new TanakhVerificationRequest(
+                    overviewScreenshotPath,
+                    detailScreenshotPath,
+                    reportPath);
+            }
+            else if (TryParseCoreVerificationArgs(args, out var searchScreenshotPath, out var tagsScreenshotPath, out var reviewScreenshotPath, out var treeScreenshotPath, out var coreReportPath))
+            {
+                coreVerificationRequest = new CoreVerificationRequest(
+                    searchScreenshotPath,
+                    tagsScreenshotPath,
+                    reviewScreenshotPath,
+                    treeScreenshotPath,
+                    coreReportPath);
+            }
+
+            var form = new MainForm(database, verificationRequest, coreVerificationRequest);
+            AppendProgramLog("MainForm created");
+
+            Application.Run(form);
+            AppendProgramLog("Application.Run finished");
+        }
+        catch (Exception exception)
+        {
+            AppendProgramLog($"Fatal exception: {exception}");
+            ShowFatalError(exception);
+        }
+    }
+
+    private static void AppendProgramLog(string message)
+    {
+        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\program-trace.log";
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+
+    private static void ShowFatalError(Exception exception)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Application Error");
+        builder.AppendLine();
+        builder.AppendLine(exception.Message);
+        builder.AppendLine();
+        builder.AppendLine(exception.StackTrace ?? "(no stack trace)");
+
+        if (exception.InnerException is not null)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Inner Exception:");
+            builder.AppendLine(exception.InnerException.Message);
+            builder.AppendLine();
+            builder.AppendLine(exception.InnerException.StackTrace ?? "(no inner stack trace)");
+        }
+
+        MessageBox.Show(
+            builder.ToString(),
+            "TrackerApp Error",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        Environment.Exit(1);
+    }
+
+    private static bool TryParseTanakhVerificationArgs(
+        IReadOnlyList<string> args,
+        out string overviewScreenshotPath,
+        out string detailScreenshotPath,
+        out string reportPath)
+    {
+        overviewScreenshotPath = string.Empty;
+        detailScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 4 || !string.Equals(args[0], "--tanakh-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        overviewScreenshotPath = args[1];
+        detailScreenshotPath = args[2];
+        reportPath = args[3];
+        return true;
+    }
+
+    private static bool TryParseCoreVerificationArgs(
+        IReadOnlyList<string> args,
+        out string searchScreenshotPath,
+        out string tagsScreenshotPath,
+        out string reviewScreenshotPath,
+        out string treeScreenshotPath,
+        out string reportPath)
+    {
+        searchScreenshotPath = string.Empty;
+        tagsScreenshotPath = string.Empty;
+        reviewScreenshotPath = string.Empty;
+        treeScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 6 || !string.Equals(args[0], "--core-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        searchScreenshotPath = args[1];
+        tagsScreenshotPath = args[2];
+        reviewScreenshotPath = args[3];
+        treeScreenshotPath = args[4];
+        reportPath = args[5];
+        return true;
+    }
+}
+
+public sealed record TanakhVerificationRequest(
+    string OverviewScreenshotPath,
+    string DetailScreenshotPath,
+    string ReportPath);
+
+public sealed record CoreVerificationRequest(
+    string SearchScreenshotPath,
+    string TagsScreenshotPath,
+    string ReviewScreenshotPath,
+    string TreeScreenshotPath,
+    string ReportPath);
+
+

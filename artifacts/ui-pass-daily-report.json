@@ -1,0 +1,15 @@
+{
+  "DueToday": 3,
+  "Overdue": 0,
+  "NewCount": 2,
+  "FailedRecently": 1,
+  "ReviewLaterCount": 1,
+  "HasPausedSession": false,
+  "PresetCount": 2,
+  "WeakSpotCount": 7,
+  "Success": true,
+  "Failure": null,
+  "DashboardScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-dashboard.png",
+  "QueuesScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-queues.png",
+  "WeakSpotsScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-weakspots.png"
+}

@@ -1,0 +1,13 @@
+{
+  "CreatedTagId": 9,
+  "CreatedThroughDialog": true,
+  "TagVisibleImmediately": true,
+  "TagCheckedImmediately": true,
+  "TagVisibleOnReopen": true,
+  "TagCheckedOnReopen": true,
+  "SelectedTagCount": 1,
+  "HasVisibleTags": true,
+  "Success": true,
+  "Failure": null,
+  "Screenshot": "C:\\CodexProjects\\Tracker\\artifacts\\tag-flow-dialog.png"
+}

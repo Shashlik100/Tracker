@@ -1,0 +1,52 @@
+[19:19:20] self-test start
+[19:19:21] tanakh node found
+[19:19:22] tanakh expanded
+[19:19:22] section nodes found
+[19:20:02] failure: System.InvalidOperationException: לא ניתן היה להרחיב את 'תורה'.
+   at TrackerApp.MainForm.ExpandNodeAsync(TreeNode node, ICollection`1 expandedPaths) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 1048
+   at TrackerApp.MainForm.RunTanakhVerificationAsync(String overviewScreenshotPath, String detailScreenshotPath, String reportPath) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 981
+[19:20:02] report saved
+[19:24:26] self-test start
+[19:24:27] tanakh node found
+[19:24:28] tanakh expanded
+[19:24:28] section nodes found
+[19:24:30] torah expanded
+[19:24:31] prophets expanded
+[19:24:32] writings expanded
+[19:24:33] overview capture on ויקרא
+[19:26:15] self-test start
+[19:26:16] tanakh node found
+[19:26:17] tanakh expanded
+[19:26:17] section nodes found
+[19:26:18] torah expanded
+[19:26:19] prophets expanded
+[19:26:20] writings expanded
+[19:26:21] overview capture on ויקרא
+[19:30:10] self-test start
+[19:30:11] tanakh node found
+[19:30:12] tanakh expanded
+[19:30:12] section nodes found
+[19:30:13] torah expanded
+[19:30:14] prophets expanded
+[19:30:15] writings expanded
+[19:30:16] overview capture on ויקרא
+[19:30:17] torah book expanded ויקרא
+[19:30:18] prophets book expanded יונה
+[19:30:19] writings book expanded רות
+[19:30:20] chapter expanded פרק א
+[19:30:21] detail capture on פסוק א
+[19:30:21] report saved
+[19:31:30] self-test start
+[19:31:31] tanakh node found
+[19:31:32] tanakh expanded
+[19:31:32] section nodes found
+[19:31:33] torah expanded
+[19:31:34] prophets expanded
+[19:31:35] writings expanded
+[19:31:35] overview capture on tanakh
+[19:31:36] torah book expanded ויקרא
+[19:31:37] prophets book expanded יונה
+[19:31:38] writings book expanded רות
+[19:31:38] chapter expanded פרק א
+[19:31:39] detail capture on פסוק א
+[19:31:39] report saved

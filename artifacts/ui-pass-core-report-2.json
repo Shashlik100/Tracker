@@ -1,0 +1,18 @@
+{
+  "SeededItemIds": [
+    8,
+    1,
+    2
+  ],
+  "SelectedPath": "\u05EA\u05E0\u0022\u05DA\\\u05EA\u05D5\u05E8\u05D4\\\u05D1\u05E8\u05D0\u05E9\u05D9\u05EA\\\u05E4\u05E8\u05E7 \u05D0\\\u05E4\u05E1\u05D5\u05E7 \u05D0",
+  "SearchTagId": 3,
+  "HardTagId": 4,
+  "SearchResults": 0,
+  "ReviewResults": 2,
+  "Success": true,
+  "Failure": null,
+  "SearchScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-search-2.png",
+  "TagsScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-tags-2.png",
+  "ReviewScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-review-filter-2.png",
+  "TreeScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-tree-2.png"
+}

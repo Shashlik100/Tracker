@@ -1,0 +1,18 @@
+[2026-03-31 07:10:17] System.InvalidOperationException: לא ניתן היה לפענח את מבנה המסכת הירושלמית 1 מ-Sefaria.
+   at TrackerApp.SefariaTalmudService.GetYerushalmiShape(String englishTractateTitle) in C:\CodexProjects\Tracker\TrackerApp\SefariaTalmudService.cs:line 137
+   at TrackerApp.AppDatabase.BuildYerushalmiHalakhahNodes(String englishTractateTitle, Int32 chapterNumber) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 696
+   at TrackerApp.AppDatabase.ResolveTalmudChildren(SubjectNodeModel parentSubject) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 564
+   at TrackerApp.AppDatabase.ResolveLazyChildren(SubjectNodeModel parentSubject) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 489
+   at TrackerApp.AppDatabase.EnsureSubjectChildrenLoaded(Int32 parentId) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 16
+   at TrackerApp.MainForm.PopulateTreeChildren(TreeNode parentNode) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 490
+   at TrackerApp.MainForm.TryPopulateTreeChildren(TreeNode parentNode) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 499
+
+[2026-03-31 07:10:24] System.InvalidOperationException: לא ניתן היה לפענח את מבנה המסכת הירושלמית 1 מ-Sefaria.
+   at TrackerApp.SefariaTalmudService.GetYerushalmiShape(String englishTractateTitle) in C:\CodexProjects\Tracker\TrackerApp\SefariaTalmudService.cs:line 137
+   at TrackerApp.AppDatabase.BuildYerushalmiHalakhahNodes(String englishTractateTitle, Int32 chapterNumber) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 696
+   at TrackerApp.AppDatabase.ResolveTalmudChildren(SubjectNodeModel parentSubject) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 564
+   at TrackerApp.AppDatabase.ResolveLazyChildren(SubjectNodeModel parentSubject) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 489
+   at TrackerApp.AppDatabase.EnsureSubjectChildrenLoaded(Int32 parentId) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs:line 16
+   at TrackerApp.MainForm.PopulateTreeChildren(TreeNode parentNode) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 490
+   at TrackerApp.MainForm.TryPopulateTreeChildren(TreeNode parentNode) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 499
+

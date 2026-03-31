@@ -1,0 +1,4580 @@
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\Program.cs
+========================================================================================================================
+using System.Drawing;
+using System.Text;
+
+namespace TrackerApp;
+
+internal static class Program
+{
+    [STAThread]
+    private static void Main(string[] args)
+    {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, args) => ShowFatalError(args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            var exception = args.ExceptionObject as Exception
+                ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown unhandled exception.");
+            ShowFatalError(exception);
+        };
+
+        try
+        {
+            File.AppendAllText(
+                "C:\\CodexProjects\\Tracker\\artifacts\\program-args.log",
+                $"[{DateTime.Now:HH:mm:ss}] args={string.Join(" | ", args)}{Environment.NewLine}");
+            AppendProgramLog("Main entered");
+
+            ToolStripManager.RenderMode = ToolStripManagerRenderMode.System;
+            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.SetDefaultFont(new Font("Microsoft Sans Serif", 8.25F, FontStyle.Regular, GraphicsUnit.Point));
+
+            using var database = new AppDatabase();
+            AppendProgramLog("AppDatabase created");
+            database.Initialize();
+            AppendProgramLog("AppDatabase initialized");
+
+            TanakhVerificationRequest? verificationRequest = null;
+            if (TryParseTanakhVerificationArgs(args, out var overviewScreenshotPath, out var detailScreenshotPath, out var reportPath))
+            {
+                verificationRequest = new TanakhVerificationRequest(
+                    overviewScreenshotPath,
+                    detailScreenshotPath,
+                    reportPath);
+            }
+
+            var form = new MainForm(database, verificationRequest);
+            AppendProgramLog("MainForm created");
+
+            Application.Run(form);
+            AppendProgramLog("Application.Run finished");
+        }
+        catch (Exception exception)
+        {
+            AppendProgramLog($"Fatal exception: {exception}");
+            ShowFatalError(exception);
+        }
+    }
+
+    private static void AppendProgramLog(string message)
+    {
+        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\program-trace.log";
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+
+    private static void ShowFatalError(Exception exception)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Application Error");
+        builder.AppendLine();
+        builder.AppendLine(exception.Message);
+        builder.AppendLine();
+        builder.AppendLine(exception.StackTrace ?? "(no stack trace)");
+
+        if (exception.InnerException is not null)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Inner Exception:");
+            builder.AppendLine(exception.InnerException.Message);
+            builder.AppendLine();
+            builder.AppendLine(exception.InnerException.StackTrace ?? "(no inner stack trace)");
+        }
+
+        MessageBox.Show(
+            builder.ToString(),
+            "TrackerApp Error",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        Environment.Exit(1);
+    }
+
+    private static bool TryParseTanakhVerificationArgs(
+        IReadOnlyList<string> args,
+        out string overviewScreenshotPath,
+        out string detailScreenshotPath,
+        out string reportPath)
+    {
+        overviewScreenshotPath = string.Empty;
+        detailScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 4 || !string.Equals(args[0], "--tanakh-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        overviewScreenshotPath = args[1];
+        detailScreenshotPath = args[2];
+        reportPath = args[3];
+        return true;
+    }
+}
+
+public sealed record TanakhVerificationRequest(
+    string OverviewScreenshotPath,
+    string DetailScreenshotPath,
+    string ReportPath);
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AppDatabase.cs
+========================================================================================================================
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
+namespace TrackerApp;
+
+public sealed partial class AppDatabase : IDisposable
+{
+    private readonly string _connectionString;
+    private readonly string _databasePath;
+    private readonly SefariaTanakhService _sefariaApiService;
+    private List<SubjectNodeModel> _subjects = new();
+
+    public AppDatabase()
+    {
+        var dataFolder = ResolveDataFolder();
+        _databasePath = Path.Combine(dataFolder, "tracker.db");
+        _sefariaApiService = new SefariaTanakhService(Path.Combine(dataFolder, "sefaria-cache"));
+        _connectionString = new SqliteConnectionStringBuilder { DataSource = _databasePath }.ToString();
+    }
+
+    public string DatabasePath => _databasePath;
+
+    public void Initialize()
+    {
+        try
+        {
+            InitializeCore();
+        }
+        catch (Exception exception) when (CanRecoverByRecreatingDatabase(exception))
+        {
+            RecreateDatabaseFile(exception);
+            InitializeCore();
+        }
+    }
+
+    private void InitializeCore()
+    {
+        using var connection = OpenConnection();
+        CreateBaseSchema(connection);
+        UpgradeSchema(connection);
+
+        using var transaction = connection.BeginTransaction();
+        EnsureLibrarySeed(connection, transaction);
+        NormalizeExistingItems(connection, transaction);
+        transaction.Commit();
+
+        _subjects = LoadSubjects(connection);
+    }
+
+    private static bool CanRecoverByRecreatingDatabase(Exception exception)
+    {
+        return exception is SqliteException or IOException or UnauthorizedAccessException;
+    }
+
+    private static string ResolveDataFolder()
+    {
+        var preferredFolder = Environment.GetEnvironmentVariable("TRACKERAPP_DATA_DIR");
+        if (TryEnsureWritableFolder(preferredFolder, out var resolvedPreferred))
+        {
+            return resolvedPreferred;
+        }
+
+        var localAppDataFolder = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "TrackerApp");
+        if (TryEnsureWritableFolder(localAppDataFolder, out var resolvedLocal))
+        {
+            return resolvedLocal;
+        }
+
+        var fallbackFolder = Path.Combine(AppContext.BaseDirectory, "AppData");
+        if (TryEnsureWritableFolder(fallbackFolder, out var resolvedFallback))
+        {
+            return resolvedFallback;
+        }
+
+        throw new InvalidOperationException("Failed to locate a writable data folder for TrackerApp.");
+    }
+
+    private static bool TryEnsureWritableFolder(string? folderPath, out string resolvedFolder)
+    {
+        resolvedFolder = string.Empty;
+        if (string.IsNullOrWhiteSpace(folderPath))
+        {
+            return false;
+        }
+
+        try
+        {
+            Directory.CreateDirectory(folderPath);
+
+            var probePath = Path.Combine(folderPath, ".write-test");
+            File.WriteAllText(probePath, DateTime.Now.ToString("O", CultureInfo.InvariantCulture));
+            File.Delete(probePath);
+
+            resolvedFolder = folderPath;
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private void RecreateDatabaseFile(Exception originalException)
+    {
+        try
+        {
+            SqliteConnection.ClearAllPools();
+        }
+        catch
+        {
+        }
+
+        try
+        {
+            if (File.Exists(_databasePath))
+            {
+                File.Delete(_databasePath);
+            }
+        }
+        catch (Exception deleteException)
+        {
+            throw new InvalidOperationException(
+                $"Failed to recreate the SQLite database at '{_databasePath}'.",
+                deleteException);
+        }
+    }
+
+    public IReadOnlyList<SubjectNodeModel> GetSubjects() => _subjects;
+
+    public IReadOnlyList<SefariaRequestLogEntry> GetSefariaRequestLog() => _sefariaApiService.GetRequestLog();
+
+    public IReadOnlyList<SubjectNodeModel> GetLeafSubjects()
+    {
+        var parents = _subjects.Where(subject => subject.ParentId.HasValue)
+            .Select(subject => subject.ParentId!.Value)
+            .ToHashSet();
+
+        return _subjects
+            .Where(subject => !parents.Contains(subject.Id))
+            .OrderBy(subject => GetSubjectPath(subject.Id))
+            .Select(subject => new SubjectNodeModel
+            {
+                Id = subject.Id,
+                ParentId = subject.ParentId,
+                Name = subject.Name,
+                DisplayPath = GetSubjectPath(subject.Id),
+                SortOrder = subject.SortOrder,
+                NodeType = subject.NodeType,
+                SourceSystem = subject.SourceSystem,
+                SourceKey = subject.SourceKey
+            })
+            .ToList();
+    }
+
+    public string GetSubjectPath(int subjectId)
+    {
+        var lookup = _subjects.ToDictionary(subject => subject.Id);
+        if (!lookup.TryGetValue(subjectId, out var current))
+        {
+            return string.Empty;
+        }
+
+        var path = new Stack<string>();
+        while (true)
+        {
+            path.Push(current.Name);
+            if (!current.ParentId.HasValue || !lookup.TryGetValue(current.ParentId.Value, out current))
+            {
+                break;
+            }
+        }
+
+        return string.Join(" > ", path);
+    }
+
+    public StudyItemModel? GetStudyItem(int itemId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems
+            WHERE Id = $itemId;
+            """;
+        command.Parameters.AddWithValue("$itemId", itemId);
+
+        using var reader = command.ExecuteReader();
+        return reader.Read() ? MapStudyItem(reader) : null;
+    }
+
+    public List<StudyItemModel> GetStudyItemsForSubject(int? subjectId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            WITH RECURSIVE SubjectTree AS (
+                SELECT Id FROM Subjects WHERE Id = $subjectId
+                UNION ALL
+                SELECT Subjects.Id
+                FROM Subjects
+                INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
+            )
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems
+            WHERE $subjectId IS NULL OR SubjectId IN (SELECT Id FROM SubjectTree)
+            ORDER BY date(DueDate) ASC, Topic ASC;
+            """;
+        command.Parameters.AddWithValue("$subjectId", subjectId.HasValue ? subjectId.Value : DBNull.Value);
+
+        using var reader = command.ExecuteReader();
+        var items = new List<StudyItemModel>();
+        while (reader.Read())
+        {
+            items.Add(MapStudyItem(reader));
+        }
+
+        return items;
+    }
+
+    public int AddStudyItem(int subjectId, string topic, string question, string answer)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        var now = DateTime.Now;
+        command.CommandText =
+            """
+            INSERT INTO StudyItems (
+                SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            )
+            VALUES (
+                $subjectId, $topic, $question, $answer, $createdAt, $modifiedAt, $dueDate, 1,
+                0, 0, 0, 2.5, 0, '', NULL
+            );
+            """;
+        command.Parameters.AddWithValue("$subjectId", subjectId);
+        command.Parameters.AddWithValue("$topic", topic.Trim());
+        command.Parameters.AddWithValue("$question", question.Trim());
+        command.Parameters.AddWithValue("$answer", answer.Trim());
+        command.Parameters.AddWithValue("$createdAt", FormatDate(now));
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
+        command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
+        command.ExecuteNonQuery();
+        return GetLastInsertRowId(connection, null);
+    }
+
+    public void UpdateStudyItem(int itemId, int subjectId, string topic, string question, string answer)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            UPDATE StudyItems
+            SET SubjectId = $subjectId,
+                Topic = $topic,
+                Question = $question,
+                Answer = $answer,
+                ModifiedAt = $modifiedAt
+            WHERE Id = $itemId;
+            """;
+        command.Parameters.AddWithValue("$itemId", itemId);
+        command.Parameters.AddWithValue("$subjectId", subjectId);
+        command.Parameters.AddWithValue("$topic", topic.Trim());
+        command.Parameters.AddWithValue("$question", question.Trim());
+        command.Parameters.AddWithValue("$answer", answer.Trim());
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(DateTime.Now));
+        command.ExecuteNonQuery();
+    }
+
+    public void DeleteStudyItem(int itemId)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        using (var deleteHistory = connection.CreateCommand())
+        {
+            deleteHistory.Transaction = transaction;
+            deleteHistory.CommandText = "DELETE FROM ReviewHistory WHERE StudyItemId = $itemId;";
+            deleteHistory.Parameters.AddWithValue("$itemId", itemId);
+            deleteHistory.ExecuteNonQuery();
+        }
+
+        using (var deleteItem = connection.CreateCommand())
+        {
+            deleteItem.Transaction = transaction;
+            deleteItem.CommandText = "DELETE FROM StudyItems WHERE Id = $itemId;";
+            deleteItem.Parameters.AddWithValue("$itemId", itemId);
+            deleteItem.ExecuteNonQuery();
+        }
+
+        transaction.Commit();
+    }
+
+    public StudyItemModel RateStudyItem(int itemId, ReviewRating rating)
+    {
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var currentItem = LoadStudyItemForUpdate(connection, transaction, itemId);
+        var reviewedAt = DateTime.Now;
+        var result = SpacedRepetitionCalculator.ApplySm2(
+            currentItem.RepetitionCount,
+            currentItem.Lapses,
+            currentItem.EaseFactor,
+            currentItem.IntervalDays,
+            rating,
+            reviewedAt);
+
+        using (var updateCommand = connection.CreateCommand())
+        {
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                """
+                UPDATE StudyItems
+                SET DueDate = $dueDate,
+                    Level = $level,
+                    TotalReviews = TotalReviews + 1,
+                    RepetitionCount = $repetitionCount,
+                    Lapses = $lapses,
+                    EaseFactor = $easeFactor,
+                    IntervalDays = $intervalDays,
+                    LastRating = $lastRating,
+                    LastReviewedAt = $lastReviewedAt,
+                    ModifiedAt = $modifiedAt
+                WHERE Id = $itemId;
+                """;
+            updateCommand.Parameters.AddWithValue("$itemId", itemId);
+            updateCommand.Parameters.AddWithValue("$dueDate", FormatDate(result.NextDueDate));
+            updateCommand.Parameters.AddWithValue("$level", result.NextLevel);
+            updateCommand.Parameters.AddWithValue("$repetitionCount", result.NextRepetitionCount);
+            updateCommand.Parameters.AddWithValue("$lapses", result.NextLapses);
+            updateCommand.Parameters.AddWithValue("$easeFactor", result.NextEaseFactor);
+            updateCommand.Parameters.AddWithValue("$intervalDays", result.NextIntervalDays);
+            updateCommand.Parameters.AddWithValue("$lastRating", rating.ToString());
+            updateCommand.Parameters.AddWithValue("$lastReviewedAt", FormatDate(reviewedAt));
+            updateCommand.Parameters.AddWithValue("$modifiedAt", FormatDate(reviewedAt));
+            updateCommand.ExecuteNonQuery();
+        }
+
+        InsertReviewHistory(connection, transaction, itemId, currentItem, result, rating, reviewedAt);
+        transaction.Commit();
+
+        return new StudyItemModel
+        {
+            Id = currentItem.Id,
+            SubjectId = currentItem.SubjectId,
+            SubjectPath = currentItem.SubjectPath,
+            RootCategory = currentItem.RootCategory,
+            Topic = currentItem.Topic,
+            Question = currentItem.Question,
+            Answer = currentItem.Answer,
+            CreatedAt = currentItem.CreatedAt,
+            ModifiedAt = reviewedAt,
+            DueDate = result.NextDueDate,
+            Level = result.NextLevel,
+            TotalReviews = currentItem.TotalReviews + 1,
+            RepetitionCount = result.NextRepetitionCount,
+            Lapses = result.NextLapses,
+            EaseFactor = result.NextEaseFactor,
+            IntervalDays = result.NextIntervalDays,
+            LastRating = rating.ToString(),
+            LastReviewedAt = reviewedAt
+        };
+    }
+
+    public void Dispose()
+    {
+        _sefariaApiService.Dispose();
+    }
+
+    private SqliteConnection OpenConnection()
+    {
+        var connection = new SqliteConnection(_connectionString);
+        connection.Open();
+
+        using var pragma = connection.CreateCommand();
+        pragma.CommandText = "PRAGMA foreign_keys = ON;";
+        pragma.ExecuteNonQuery();
+
+        return connection;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Library.cs
+========================================================================================================================
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
+namespace TrackerApp;
+
+public sealed partial class AppDatabase
+{
+    private const string LibrarySeedVersionKey = "LibrarySeedVersion";
+
+    private void CreateBaseSchema(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            CREATE TABLE IF NOT EXISTS Subjects (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                ParentId INTEGER NULL,
+                Name TEXT NOT NULL,
+                NodeType TEXT NOT NULL DEFAULT 'Generic',
+                SourceSystem TEXT NOT NULL DEFAULT '',
+                SourceKey TEXT NOT NULL DEFAULT '',
+                SortOrder INTEGER NOT NULL,
+                FOREIGN KEY (ParentId) REFERENCES Subjects(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS StudyItems (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                SubjectId INTEGER NOT NULL,
+                Topic TEXT NOT NULL,
+                Question TEXT NOT NULL,
+                Answer TEXT NOT NULL,
+                CreatedAt TEXT NOT NULL,
+                DueDate TEXT NOT NULL,
+                Level INTEGER NOT NULL DEFAULT 1,
+                TotalReviews INTEGER NOT NULL DEFAULT 0,
+                LastReviewedAt TEXT NULL,
+                FOREIGN KEY (SubjectId) REFERENCES Subjects(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS ReviewHistory (
+                Id INTEGER PRIMARY KEY AUTOINCREMENT,
+                StudyItemId INTEGER NOT NULL,
+                ReviewedAt TEXT NOT NULL,
+                Score INTEGER NOT NULL DEFAULT 0,
+                FOREIGN KEY (StudyItemId) REFERENCES StudyItems(Id)
+            );
+
+            CREATE TABLE IF NOT EXISTS AppMetadata (
+                Key TEXT PRIMARY KEY,
+                Value TEXT NOT NULL
+            );
+            """;
+        command.ExecuteNonQuery();
+    }
+
+    private void UpgradeSchema(SqliteConnection connection)
+    {
+        EnsureColumn(connection, "Subjects", "NodeType", "TEXT NOT NULL DEFAULT 'Generic'");
+        EnsureColumn(connection, "Subjects", "SourceSystem", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "Subjects", "SourceKey", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "StudyItems", "ModifiedAt", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "StudyItems", "RepetitionCount", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "StudyItems", "Lapses", "INTEGER NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "StudyItems", "EaseFactor", "REAL NOT NULL DEFAULT 2.5");
+        EnsureColumn(connection, "StudyItems", "IntervalDays", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "StudyItems", "LastRating", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, "ReviewHistory", "Rating", "TEXT NOT NULL DEFAULT 'Good'");
+        EnsureColumn(connection, "ReviewHistory", "WasSuccessful", "INTEGER NOT NULL DEFAULT 1");
+        EnsureColumn(connection, "ReviewHistory", "EaseFactorBefore", "REAL NOT NULL DEFAULT 2.5");
+        EnsureColumn(connection, "ReviewHistory", "EaseFactorAfter", "REAL NOT NULL DEFAULT 2.5");
+        EnsureColumn(connection, "ReviewHistory", "IntervalBefore", "REAL NOT NULL DEFAULT 0");
+        EnsureColumn(connection, "ReviewHistory", "IntervalAfter", "REAL NOT NULL DEFAULT 0");
+    }
+
+    private void EnsureColumn(SqliteConnection connection, string tableName, string columnName, string definition)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = $"PRAGMA table_info({tableName});";
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            if (reader.GetString(1).Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return;
+            }
+        }
+
+        reader.Close();
+
+        using var alterCommand = connection.CreateCommand();
+        alterCommand.CommandText = $"ALTER TABLE {tableName} ADD COLUMN {columnName} {definition};";
+        alterCommand.ExecuteNonQuery();
+    }
+
+    private void EnsureDefaultLibraryStructure(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        var sortOrder = 1;
+        foreach (var rootNode in LibrarySeedFactory.GetDefaultHierarchy())
+        {
+            EnsureLibraryNode(connection, transaction, null, rootNode, sortOrder++);
+        }
+    }
+
+    private void EnsureLibrarySeed(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        var hasSubjects = GetSubjectsCount(connection, transaction) > 0;
+        EnsureDefaultLibraryStructure(connection, transaction);
+        if (!hasSubjects)
+        {
+            SeedSampleCardsIfEmpty(connection, transaction);
+        }
+
+        SetMetadataValue(connection, transaction, LibrarySeedVersionKey, LibrarySeedFactory.SeedVersion);
+    }
+
+    private void SeedSampleCardsIfEmpty(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var countCommand = connection.CreateCommand();
+        countCommand.Transaction = transaction;
+        countCommand.CommandText = "SELECT COUNT(*) FROM StudyItems;";
+        var count = Convert.ToInt32(countCommand.ExecuteScalar(), CultureInfo.InvariantCulture);
+        if (count > 0)
+        {
+            return;
+        }
+
+        foreach (var sample in LibrarySeedFactory.GetSampleCards())
+        {
+            var subjectId = EnsureSubjectPath(connection, transaction, sample.Path);
+            InsertStudyItem(connection, transaction, subjectId, sample.Topic, sample.Question, sample.Answer, DateTime.Now);
+        }
+    }
+
+    private static void ResetLibraryData(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        ExecuteNonQuery(connection, transaction, "PRAGMA foreign_keys = OFF;");
+
+        foreach (var sql in new[]
+                 {
+                     "DELETE FROM ReviewHistory;",
+                     "DELETE FROM StudyItems;",
+                     "DELETE FROM Subjects;",
+                     "DELETE FROM sqlite_sequence WHERE name IN ('ReviewHistory', 'StudyItems', 'Subjects');"
+                 })
+        {
+            ExecuteNonQuery(connection, transaction, sql);
+        }
+
+        ExecuteNonQuery(connection, transaction, "PRAGMA foreign_keys = ON;");
+    }
+
+    private void NormalizeExistingItems(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT Id, CreatedAt, Level, ModifiedAt, EaseFactor, IntervalDays, RepetitionCount
+            FROM StudyItems;
+            """;
+
+        using var reader = command.ExecuteReader();
+        var updates = new List<(int Id, string ModifiedAt, double IntervalDays, int Repetitions, double EaseFactor, string LastRating)>();
+        while (reader.Read())
+        {
+            var id = reader.GetInt32(0);
+            var createdAt = ParseDate(reader.GetString(1));
+            var level = reader.GetInt32(2);
+            var modifiedAt = reader.IsDBNull(3) || string.IsNullOrWhiteSpace(reader.GetString(3))
+                ? FormatDate(createdAt)
+                : reader.GetString(3);
+            var easeFactor = reader.IsDBNull(4) ? 2.5 : reader.GetDouble(4);
+            var intervalDays = reader.IsDBNull(5) ? 0 : reader.GetDouble(5);
+            var repetitions = reader.IsDBNull(6) ? 0 : reader.GetInt32(6);
+
+            if (repetitions == 0 && level > 1)
+            {
+                repetitions = Math.Max(0, level - 1);
+            }
+
+            if (intervalDays == 0 && repetitions > 0)
+            {
+                intervalDays = InferIntervalDays(level);
+            }
+
+            updates.Add((id, modifiedAt, intervalDays, repetitions, easeFactor <= 0 ? 2.5 : easeFactor, repetitions > 0 ? "Good" : string.Empty));
+        }
+
+        reader.Close();
+
+        foreach (var update in updates)
+        {
+            using var updateCommand = connection.CreateCommand();
+            updateCommand.Transaction = transaction;
+            updateCommand.CommandText =
+                """
+                UPDATE StudyItems
+                SET ModifiedAt = $modifiedAt,
+                    IntervalDays = $intervalDays,
+                    RepetitionCount = $repetitions,
+                    EaseFactor = $easeFactor,
+                    LastRating = CASE WHEN LastRating = '' THEN $lastRating ELSE LastRating END
+                WHERE Id = $id;
+                """;
+            updateCommand.Parameters.AddWithValue("$id", update.Id);
+            updateCommand.Parameters.AddWithValue("$modifiedAt", update.ModifiedAt);
+            updateCommand.Parameters.AddWithValue("$intervalDays", update.IntervalDays);
+            updateCommand.Parameters.AddWithValue("$repetitions", update.Repetitions);
+            updateCommand.Parameters.AddWithValue("$easeFactor", update.EaseFactor);
+            updateCommand.Parameters.AddWithValue("$lastRating", update.LastRating);
+            updateCommand.ExecuteNonQuery();
+        }
+    }
+
+    public int AddSubjectFolder(int? parentId, string folderName)
+    {
+        if (string.IsNullOrWhiteSpace(folderName))
+        {
+            throw new ArgumentException("Folder name is required.", nameof(folderName));
+        }
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var normalizedName = folderName.Trim();
+        var existingId = FindSubjectId(connection, transaction, parentId, normalizedName);
+        if (existingId.HasValue)
+        {
+            transaction.Commit();
+            RefreshSubjectCache();
+            return existingId.Value;
+        }
+
+        var subjectId = InsertSubject(
+            connection,
+            transaction,
+            parentId,
+            normalizedName,
+            LibraryNodeType.Generic,
+            string.Empty,
+            string.Empty,
+            GetNextSortOrder(connection, transaction, parentId));
+
+        transaction.Commit();
+        RefreshSubjectCache();
+        return subjectId;
+    }
+
+    private int EnsureSubjectPath(SqliteConnection connection, SqliteTransaction transaction, IEnumerable<string> segments)
+    {
+        int? parentId = null;
+
+        foreach (var rawSegment in segments)
+        {
+            var segment = rawSegment.Trim();
+            if (segment.Length == 0)
+            {
+                continue;
+            }
+
+            var existingId = FindSubjectId(connection, transaction, parentId, segment);
+            if (existingId.HasValue)
+            {
+                parentId = existingId.Value;
+            }
+            else
+            {
+                parentId = InsertSubject(
+                    connection,
+                    transaction,
+                    parentId,
+                    segment,
+                    LibraryNodeType.Generic,
+                    string.Empty,
+                    string.Empty,
+                    GetNextSortOrder(connection, transaction, parentId));
+            }
+        }
+
+        return parentId ?? throw new InvalidOperationException("Subject path could not be resolved.");
+    }
+
+    private int EnsureLibraryNode(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int? parentId,
+        LibrarySeedNode node,
+        int sortOrder)
+    {
+        var existingId = FindSubjectId(connection, transaction, parentId, node.Name);
+        var nodeId = existingId ?? InsertSubject(
+            connection,
+            transaction,
+            parentId,
+            node.Name,
+            node.NodeType,
+            node.SourceSystem,
+            node.SourceKey,
+            sortOrder);
+
+        if (existingId.HasValue)
+        {
+            UpdateSortOrder(connection, transaction, nodeId, sortOrder);
+            UpdateSubjectMetadata(connection, transaction, nodeId, node);
+        }
+
+        var childSortOrder = 1;
+        foreach (var child in node.Children)
+        {
+            EnsureLibraryNode(connection, transaction, nodeId, child, childSortOrder++);
+        }
+
+        return nodeId;
+    }
+
+    private static int? FindSubjectId(SqliteConnection connection, SqliteTransaction transaction, int? parentId, string name)
+    {
+        using var findCommand = connection.CreateCommand();
+        findCommand.Transaction = transaction;
+        findCommand.CommandText =
+            """
+            SELECT Id
+            FROM Subjects
+            WHERE ((ParentId IS NULL AND $parentId IS NULL) OR ParentId = $parentId)
+              AND Name = $name
+            LIMIT 1;
+            """;
+        findCommand.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        findCommand.Parameters.AddWithValue("$name", name);
+
+        var existingId = findCommand.ExecuteScalar();
+        return existingId is null ? null : Convert.ToInt32(existingId, CultureInfo.InvariantCulture);
+    }
+
+    private static int InsertSubject(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int? parentId,
+        string name,
+        LibraryNodeType nodeType,
+        string sourceSystem,
+        string sourceKey,
+        int sortOrder)
+    {
+        using var insertCommand = connection.CreateCommand();
+        insertCommand.Transaction = transaction;
+        insertCommand.CommandText =
+            """
+            INSERT INTO Subjects (ParentId, Name, NodeType, SourceSystem, SourceKey, SortOrder)
+            VALUES ($parentId, $name, $nodeType, $sourceSystem, $sourceKey, $sortOrder);
+            """;
+        insertCommand.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        insertCommand.Parameters.AddWithValue("$name", name);
+        insertCommand.Parameters.AddWithValue("$nodeType", nodeType.ToString());
+        insertCommand.Parameters.AddWithValue("$sourceSystem", sourceSystem);
+        insertCommand.Parameters.AddWithValue("$sourceKey", sourceKey);
+        insertCommand.Parameters.AddWithValue("$sortOrder", sortOrder);
+        insertCommand.ExecuteNonQuery();
+        return GetLastInsertRowId(connection, transaction);
+    }
+
+    private static void UpdateSortOrder(SqliteConnection connection, SqliteTransaction transaction, int subjectId, int sortOrder)
+    {
+        using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
+        updateCommand.CommandText =
+            """
+            UPDATE Subjects
+            SET SortOrder = $sortOrder
+            WHERE Id = $subjectId AND SortOrder <> $sortOrder;
+            """;
+        updateCommand.Parameters.AddWithValue("$subjectId", subjectId);
+        updateCommand.Parameters.AddWithValue("$sortOrder", sortOrder);
+        updateCommand.ExecuteNonQuery();
+    }
+
+    private static int GetNextSortOrder(SqliteConnection connection, SqliteTransaction transaction, int? parentId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT COALESCE(MAX(SortOrder), 0) + 1
+            FROM Subjects
+            WHERE ((ParentId IS NULL AND $parentId IS NULL) OR ParentId = $parentId);
+            """;
+        command.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    private static void UpdateSubjectMetadata(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int subjectId,
+        LibrarySeedNode node)
+    {
+        using var updateCommand = connection.CreateCommand();
+        updateCommand.Transaction = transaction;
+        updateCommand.CommandText =
+            """
+            UPDATE Subjects
+            SET NodeType = $nodeType,
+                SourceSystem = $sourceSystem,
+                SourceKey = $sourceKey
+            WHERE Id = $subjectId
+              AND (NodeType <> $nodeType OR SourceSystem <> $sourceSystem OR SourceKey <> $sourceKey);
+            """;
+        updateCommand.Parameters.AddWithValue("$subjectId", subjectId);
+        updateCommand.Parameters.AddWithValue("$nodeType", node.NodeType.ToString());
+        updateCommand.Parameters.AddWithValue("$sourceSystem", node.SourceSystem);
+        updateCommand.Parameters.AddWithValue("$sourceKey", node.SourceKey);
+        updateCommand.ExecuteNonQuery();
+    }
+
+    private static int GetSubjectsCount(SqliteConnection connection, SqliteTransaction transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT COUNT(*) FROM Subjects;";
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    private static string? GetMetadataValue(SqliteConnection connection, SqliteTransaction transaction, string key)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT Value FROM AppMetadata WHERE Key = $key LIMIT 1;";
+        command.Parameters.AddWithValue("$key", key);
+        return command.ExecuteScalar() as string;
+    }
+
+    private static void SetMetadataValue(SqliteConnection connection, SqliteTransaction transaction, string key, string value)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO AppMetadata (Key, Value)
+            VALUES ($key, $value)
+            ON CONFLICT(Key) DO UPDATE SET Value = excluded.Value;
+            """;
+        command.Parameters.AddWithValue("$key", key);
+        command.Parameters.AddWithValue("$value", value);
+        command.ExecuteNonQuery();
+    }
+
+    private static void InsertStudyItem(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int subjectId,
+        string topic,
+        string question,
+        string answer,
+        DateTime now)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            INSERT INTO StudyItems (
+                SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            )
+            VALUES (
+                $subjectId, $topic, $question, $answer, $createdAt, $modifiedAt, $dueDate, 1,
+                0, 0, 0, 2.5, 0, '', NULL
+            );
+            """;
+        command.Parameters.AddWithValue("$subjectId", subjectId);
+        command.Parameters.AddWithValue("$topic", topic.Trim());
+        command.Parameters.AddWithValue("$question", question.Trim());
+        command.Parameters.AddWithValue("$answer", answer.Trim());
+        command.Parameters.AddWithValue("$createdAt", FormatDate(now));
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
+        command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
+        command.ExecuteNonQuery();
+    }
+
+    private static double InferIntervalDays(int level)
+    {
+        return level switch
+        {
+            <= 1 => 0,
+            2 => 1,
+            3 => 7,
+            4 => 14,
+            _ => 14 * Math.Pow(2, Math.Max(0, level - 4))
+        };
+    }
+
+    private static void ExecuteNonQuery(SqliteConnection connection, SqliteTransaction transaction, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = sql;
+        command.ExecuteNonQuery();
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AppDatabase.Tools.cs
+========================================================================================================================
+using System.Globalization;
+using Microsoft.Data.Sqlite;
+
+namespace TrackerApp;
+
+public sealed partial class AppDatabase
+{
+    public void EnsureSubjectChildrenLoaded(int parentId)
+    {
+        var parentSubject = _subjects.FirstOrDefault(subject => subject.Id == parentId);
+        if (parentSubject is null)
+        {
+            return;
+        }
+
+        var lazyChildren = ResolveLazyChildren(parentSubject);
+        if (lazyChildren.Count == 0)
+        {
+            return;
+        }
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var sortOrder = 1;
+        foreach (var child in lazyChildren)
+        {
+            EnsureLibraryNode(connection, transaction, parentId, child, sortOrder++);
+        }
+
+        transaction.Commit();
+        RefreshSubjectCache();
+    }
+
+    public IReadOnlyList<SubjectNodeModel> GetTreeChildren(int? parentId)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT s.Id,
+                   s.ParentId,
+                   s.Name,
+                   s.NodeType,
+                   s.SourceSystem,
+                   s.SourceKey,
+                   s.SortOrder,
+                   EXISTS(SELECT 1 FROM Subjects child WHERE child.ParentId = s.Id) AS HasChildren
+            FROM Subjects s
+            WHERE (($parentId IS NULL AND s.ParentId IS NULL) OR s.ParentId = $parentId)
+            ORDER BY s.SortOrder, s.Id;
+            """;
+        command.Parameters.AddWithValue("$parentId", parentId.HasValue ? parentId.Value : DBNull.Value);
+
+        using var reader = command.ExecuteReader();
+        var subjects = new List<SubjectNodeModel>();
+        while (reader.Read())
+        {
+            var id = reader.GetInt32(0);
+            var displayPath = GetSubjectPath(id);
+            var hasDatabaseChildren = reader.GetInt32(7) == 1;
+            subjects.Add(new SubjectNodeModel
+            {
+                Id = id,
+                ParentId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                Name = reader.GetString(2),
+                SortOrder = reader.GetInt32(6),
+                DisplayPath = displayPath,
+                HasChildren = hasDatabaseChildren || HasPotentialLazyChildren(new SubjectNodeModel
+                {
+                    Id = id,
+                    ParentId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                    Name = reader.GetString(2),
+                    DisplayPath = displayPath,
+                    SortOrder = reader.GetInt32(6),
+                    NodeType = ParseLibraryNodeType(reader.GetString(3)),
+                    SourceSystem = reader.GetString(4),
+                    SourceKey = reader.GetString(5)
+                }),
+                NodeType = ParseLibraryNodeType(reader.GetString(3)),
+                SourceSystem = reader.GetString(4),
+                SourceKey = reader.GetString(5)
+            });
+        }
+
+        return subjects;
+    }
+
+    public IReadOnlyList<SubjectNodeModel> GetSubjectLineage(int subjectId)
+    {
+        var lookup = _subjects.ToDictionary(subject => subject.Id);
+        if (!lookup.TryGetValue(subjectId, out var current))
+        {
+            return [];
+        }
+
+        var lineage = new Stack<SubjectNodeModel>();
+        while (true)
+        {
+            lineage.Push(current);
+            if (!current.ParentId.HasValue || !lookup.TryGetValue(current.ParentId.Value, out current))
+            {
+                break;
+            }
+        }
+
+        return lineage.ToList();
+    }
+
+    public int ImportFromCsv(string filePath)
+    {
+        var rows = CsvUtility.ReadRows(filePath);
+        if (rows.Count == 0)
+        {
+            return 0;
+        }
+
+        var header = rows[0];
+        var hasHeader = header.Any(value => value.Equals("SubjectPath", StringComparison.OrdinalIgnoreCase));
+        var bodyRows = hasHeader ? rows.Skip(1) : rows;
+
+        using var connection = OpenConnection();
+        using var transaction = connection.BeginTransaction();
+
+        var imported = 0;
+        foreach (var row in bodyRows)
+        {
+            if (row.Length == 0 || row.All(string.IsNullOrWhiteSpace))
+            {
+                continue;
+            }
+
+            var subjectPath = GetCell(row, header, hasHeader, 0, "SubjectPath");
+            var topic = GetCell(row, header, hasHeader, 1, "Topic");
+            var question = GetCell(row, header, hasHeader, 2, "Question");
+            var answer = GetCell(row, header, hasHeader, 3, "Answer");
+
+            if (string.IsNullOrWhiteSpace(subjectPath) ||
+                string.IsNullOrWhiteSpace(topic) ||
+                string.IsNullOrWhiteSpace(question) ||
+                string.IsNullOrWhiteSpace(answer))
+            {
+                continue;
+            }
+
+            var subjectId = EnsureSubjectPath(connection, transaction, SplitPath(subjectPath));
+            InsertStudyItem(connection, transaction, subjectId, topic, question, answer, DateTime.Now);
+            imported++;
+        }
+
+        transaction.Commit();
+        RefreshSubjectCache();
+        return imported;
+    }
+
+    public void ExportToCsv(string filePath)
+    {
+        var rows = new List<string[]>
+        {
+            new[] { "Id", "SubjectPath", "Topic", "Question", "Answer", "DueDate", "EaseFactor", "IntervalDays", "RepetitionCount", "LastRating" }
+        };
+
+        foreach (var item in GetStudyItemsForSubject(null))
+        {
+            rows.Add(
+                new[]
+                {
+                    item.Id.ToString(CultureInfo.InvariantCulture),
+                    item.SubjectPath,
+                    item.Topic,
+                    item.Question,
+                    item.Answer,
+                    item.DueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
+                    item.EaseFactor.ToString("0.00", CultureInfo.InvariantCulture),
+                    item.IntervalDays.ToString("0.##", CultureInfo.InvariantCulture),
+                    item.RepetitionCount.ToString(CultureInfo.InvariantCulture),
+                    item.LastRating
+                });
+        }
+
+        CsvUtility.WriteRows(filePath, rows);
+    }
+
+    public void BackupDatabase(string filePath)
+    {
+        using var connection = OpenConnection();
+        using var command = connection.CreateCommand();
+        command.CommandText = $"VACUUM INTO '{filePath.Replace("'", "''", StringComparison.Ordinal)}';";
+        command.ExecuteNonQuery();
+    }
+
+    public void ExportPrintableHtml(DateTime startDate, DateTime endDate, string filePath)
+    {
+        PrintExportService.ExportHtml(filePath, startDate, endDate, GetPrintableItems(startDate, endDate));
+    }
+
+    public DashboardStats GetDashboardStats()
+    {
+        var allItems = GetStudyItemsForSubject(null);
+        var today = DateTime.Today;
+
+        using var connection = OpenConnection();
+        var completedToday = ExecuteScalarCount(connection,
+            "SELECT COUNT(*) FROM ReviewHistory WHERE date(ReviewedAt) = date('now', 'localtime');");
+        var retentionTotal = ExecuteScalarCount(connection, "SELECT COUNT(*) FROM ReviewHistory;");
+        var retentionSuccess = ExecuteScalarCount(connection, "SELECT COUNT(*) FROM ReviewHistory WHERE WasSuccessful = 1;");
+
+        var timeline = new List<ReviewTimelinePoint>();
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText =
+                """
+                SELECT date(ReviewedAt), AVG(Score), COUNT(*)
+                FROM ReviewHistory
+                GROUP BY date(ReviewedAt)
+                ORDER BY date(ReviewedAt);
+                """;
+
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                timeline.Add(new ReviewTimelinePoint
+                {
+                    Day = ParseDate(reader.GetString(0)),
+                    AverageScore = reader.IsDBNull(1) ? 0 : reader.GetDouble(1),
+                    ReviewCount = reader.GetInt32(2)
+                });
+            }
+        }
+
+        return new DashboardStats
+        {
+            TotalItems = allItems.Count,
+            DueToday = allItems.Count(item => item.DueDate.Date <= today),
+            CompletedToday = completedToday,
+            MasteredItems = allItems.Count(item => item.IsMastered),
+            RetentionRate = retentionTotal == 0 ? 0 : retentionSuccess * 100.0 / retentionTotal,
+            ItemsBySubject = allItems
+                .GroupBy(item => item.RootCategory)
+                .Select(group => new SubjectCountModel { Name = group.Key, Count = group.Count() })
+                .OrderByDescending(group => group.Count)
+                .ToList(),
+            DueBySubject = allItems
+                .Where(item => item.DueDate.Date <= today)
+                .GroupBy(item => item.RootCategory)
+                .Select(group => new SubjectCountModel { Name = group.Key, Count = group.Count() })
+                .OrderByDescending(group => group.Count)
+                .ToList(),
+            MasteredByCategory = allItems
+                .Where(item => item.IsMastered)
+                .GroupBy(item => item.RootCategory)
+                .Select(group => new SubjectCountModel { Name = group.Key, Count = group.Count() })
+                .OrderByDescending(group => group.Count)
+                .ToList(),
+            ReviewTimeline = timeline.TakeLast(21).ToList(),
+            Heatmap = GetHeatmapData(connection, 84)
+        };
+    }
+
+    private void RefreshSubjectCache()
+    {
+        using var connection = OpenConnection();
+        _subjects = LoadSubjects(connection);
+    }
+
+    private StudyItemModel LoadStudyItemForUpdate(SqliteConnection connection, SqliteTransaction transaction, int itemId)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText =
+            """
+            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
+                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt
+            FROM StudyItems
+            WHERE Id = $itemId;
+            """;
+        command.Parameters.AddWithValue("$itemId", itemId);
+
+        using var reader = command.ExecuteReader();
+        if (!reader.Read())
+        {
+            throw new InvalidOperationException($"Study item {itemId} was not found.");
+        }
+
+        return MapStudyItem(reader);
+    }
+
+    private void InsertReviewHistory(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        int itemId,
+        StudyItemModel currentItem,
+        ReviewResult result,
+        ReviewRating rating,
+        DateTime reviewedAt)
+    {
+        using var historyCommand = connection.CreateCommand();
+        historyCommand.Transaction = transaction;
+        historyCommand.CommandText =
+            """
+            INSERT INTO ReviewHistory (
+                StudyItemId, ReviewedAt, Rating, Score, WasSuccessful,
+                EaseFactorBefore, EaseFactorAfter, IntervalBefore, IntervalAfter
+            )
+            VALUES (
+                $studyItemId, $reviewedAt, $rating, $score, $wasSuccessful,
+                $easeFactorBefore, $easeFactorAfter, $intervalBefore, $intervalAfter
+            );
+            """;
+        historyCommand.Parameters.AddWithValue("$studyItemId", itemId);
+        historyCommand.Parameters.AddWithValue("$reviewedAt", FormatDate(reviewedAt));
+        historyCommand.Parameters.AddWithValue("$rating", rating.ToString());
+        historyCommand.Parameters.AddWithValue("$score", (int)rating);
+        historyCommand.Parameters.AddWithValue("$wasSuccessful", result.IsSuccessful ? 1 : 0);
+        historyCommand.Parameters.AddWithValue("$easeFactorBefore", currentItem.EaseFactor);
+        historyCommand.Parameters.AddWithValue("$easeFactorAfter", result.NextEaseFactor);
+        historyCommand.Parameters.AddWithValue("$intervalBefore", currentItem.IntervalDays);
+        historyCommand.Parameters.AddWithValue("$intervalAfter", result.NextIntervalDays);
+        historyCommand.ExecuteNonQuery();
+    }
+
+    private StudyItemModel MapStudyItem(SqliteDataReader reader)
+    {
+        var subjectId = reader.GetInt32(1);
+        return new StudyItemModel
+        {
+            Id = reader.GetInt32(0),
+            SubjectId = subjectId,
+            SubjectPath = GetSubjectPath(subjectId),
+            RootCategory = GetRootCategory(subjectId),
+            Topic = reader.GetString(2),
+            Question = reader.GetString(3),
+            Answer = reader.GetString(4),
+            CreatedAt = ParseDate(reader.GetString(5)),
+            ModifiedAt = ParseDate(reader.GetString(6)),
+            DueDate = ParseDate(reader.GetString(7)),
+            Level = reader.GetInt32(8),
+            TotalReviews = reader.GetInt32(9),
+            RepetitionCount = reader.GetInt32(10),
+            Lapses = reader.GetInt32(11),
+            EaseFactor = reader.GetDouble(12),
+            IntervalDays = reader.GetDouble(13),
+            LastRating = reader.GetString(14),
+            LastReviewedAt = reader.IsDBNull(15) ? null : ParseDate(reader.GetString(15))
+        };
+    }
+
+    private List<SubjectNodeModel> LoadSubjects(SqliteConnection connection)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT Id, ParentId, Name, NodeType, SourceSystem, SourceKey, SortOrder
+            FROM Subjects
+            ORDER BY COALESCE(ParentId, 0), SortOrder, Id;
+            """;
+
+        using var reader = command.ExecuteReader();
+        var subjects = new List<SubjectNodeModel>();
+        while (reader.Read())
+        {
+            var id = reader.GetInt32(0);
+            subjects.Add(new SubjectNodeModel
+            {
+                Id = id,
+                ParentId = reader.IsDBNull(1) ? null : reader.GetInt32(1),
+                Name = reader.GetString(2),
+                NodeType = ParseLibraryNodeType(reader.GetString(3)),
+                SourceSystem = reader.GetString(4),
+                SourceKey = reader.GetString(5),
+                SortOrder = reader.GetInt32(6),
+                DisplayPath = string.Empty,
+                HasChildren = false
+            });
+        }
+
+        return subjects;
+    }
+
+    private List<PrintableScheduleItem> GetPrintableItems(DateTime startDate, DateTime endDate)
+    {
+        return GetStudyItemsForSubject(null)
+            .Where(item => item.DueDate.Date >= startDate.Date && item.DueDate.Date <= endDate.Date)
+            .Select(item => new PrintableScheduleItem
+            {
+                SubjectPath = item.SubjectPath,
+                Topic = item.Topic,
+                Question = item.Question,
+                Answer = item.Answer,
+                DueDate = item.DueDate
+            })
+            .ToList();
+    }
+
+    private List<HeatmapDayModel> GetHeatmapData(SqliteConnection connection, int daysBack)
+    {
+        var counts = new Dictionary<DateTime, int>();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            """
+            SELECT date(ReviewedAt), COUNT(*)
+            FROM ReviewHistory
+            WHERE date(ReviewedAt) >= date('now', '-' || $days || ' day')
+            GROUP BY date(ReviewedAt);
+            """;
+        command.Parameters.AddWithValue("$days", daysBack);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+        {
+            counts[ParseDate(reader.GetString(0)).Date] = reader.GetInt32(1);
+        }
+
+        var start = DateTime.Today.AddDays(-(daysBack - 1));
+        var result = new List<HeatmapDayModel>();
+        for (var day = start.Date; day <= DateTime.Today; day = day.AddDays(1))
+        {
+            counts.TryGetValue(day, out var reviewCount);
+            result.Add(new HeatmapDayModel { Day = day, ReviewCount = reviewCount });
+        }
+
+        return result;
+    }
+
+    private string GetRootCategory(int subjectId)
+    {
+        var path = GetSubjectPath(subjectId);
+        return path.Split(" > ", StringSplitOptions.RemoveEmptyEntries).FirstOrDefault() ?? "ללא קטגוריה";
+    }
+
+    private static int ExecuteScalarCount(SqliteConnection connection, string sql)
+    {
+        using var command = connection.CreateCommand();
+        command.CommandText = sql;
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    private static int GetLastInsertRowId(SqliteConnection connection, SqliteTransaction? transaction)
+    {
+        using var command = connection.CreateCommand();
+        command.Transaction = transaction;
+        command.CommandText = "SELECT last_insert_rowid();";
+        return Convert.ToInt32(command.ExecuteScalar(), CultureInfo.InvariantCulture);
+    }
+
+    private static IEnumerable<string> SplitPath(string subjectPath)
+    {
+        return subjectPath
+            .Split(new[] { '>', '/', '\\' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static string GetCell(string[] row, string[] header, bool hasHeader, int fallbackIndex, string columnName)
+    {
+        if (!hasHeader)
+        {
+            return fallbackIndex < row.Length ? row[fallbackIndex] : string.Empty;
+        }
+
+        for (var index = 0; index < header.Length; index++)
+        {
+            if (header[index].Equals(columnName, StringComparison.OrdinalIgnoreCase))
+            {
+                return index < row.Length ? row[index] : string.Empty;
+            }
+        }
+
+        return string.Empty;
+    }
+
+    private static string FormatDate(DateTime value) => value.ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
+
+    private static DateTime ParseDate(string value) => DateTime.Parse(value, CultureInfo.InvariantCulture);
+
+    private IReadOnlyList<LibrarySeedNode> ResolveLazyChildren(SubjectNodeModel parentSubject)
+    {
+        if (string.Equals(parentSubject.SourceSystem, "Sefaria", StringComparison.OrdinalIgnoreCase))
+        {
+            return ResolveSefariaChildren(parentSubject);
+        }
+
+        var path = GetSubjectPath(parentSubject.Id);
+        return LibrarySeedFactory.GetLazyChildren(SplitPath(path).ToArray());
+    }
+
+    private IReadOnlyList<LibrarySeedNode> ResolveSefariaChildren(SubjectNodeModel parentSubject)
+    {
+        return parentSubject.NodeType switch
+        {
+            LibraryNodeType.Section => _sefariaApiService.GetBooksForSection(parentSubject.Name)
+                .Select(book => new LibrarySeedNode(book.HebrewTitle, [], LibraryNodeType.Book, "Sefaria", book.EnglishTitle))
+                .ToArray(),
+            LibraryNodeType.Book => BuildTanakhChapterNodes(parentSubject.SourceKey),
+            LibraryNodeType.Chapter => BuildTanakhVerseNodes(parentSubject.SourceKey),
+            _ => []
+        };
+    }
+
+    private IReadOnlyList<LibrarySeedNode> BuildTanakhChapterNodes(string englishBookTitle)
+    {
+        var shape = _sefariaApiService.GetBookShape(englishBookTitle);
+        var chapters = new List<LibrarySeedNode>();
+        for (var chapterNumber = 1; chapterNumber <= shape.VerseCountsByChapter.Count; chapterNumber++)
+        {
+            chapters.Add(new LibrarySeedNode(
+                $"פרק {LibrarySeedFactory.ToHebrewNumeral(chapterNumber)}",
+                [],
+                LibraryNodeType.Chapter,
+                "Sefaria",
+                $"{englishBookTitle}|{chapterNumber}"));
+        }
+
+        return chapters;
+    }
+
+    private IReadOnlyList<LibrarySeedNode> BuildTanakhVerseNodes(string chapterKey)
+    {
+        var parts = chapterKey.Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        if (parts.Length != 2 || !int.TryParse(parts[1], out var chapterNumber))
+        {
+            throw new InvalidOperationException($"מפתח פרק לא תקין: {chapterKey}");
+        }
+
+        var verseCount = _sefariaApiService.GetVerseCountForChapter(parts[0], chapterNumber);
+        var verses = new List<LibrarySeedNode>();
+        for (var verseNumber = 1; verseNumber <= verseCount; verseNumber++)
+        {
+            verses.Add(new LibrarySeedNode(
+                $"פסוק {LibrarySeedFactory.ToHebrewNumeral(verseNumber)}",
+                [],
+                LibraryNodeType.Verse,
+                "Sefaria",
+                $"{parts[0]}|{chapterNumber}|{verseNumber}"));
+        }
+
+        return verses;
+    }
+
+    private bool HasPotentialLazyChildren(SubjectNodeModel subject)
+    {
+        if (string.Equals(subject.SourceSystem, "Sefaria", StringComparison.OrdinalIgnoreCase))
+        {
+            return subject.NodeType is LibraryNodeType.Section or LibraryNodeType.Book or LibraryNodeType.Chapter;
+        }
+
+        return LibrarySeedFactory.HasLazyChildren(SplitPath(subject.DisplayPath).ToArray());
+    }
+
+    private static LibraryNodeType ParseLibraryNodeType(string rawValue)
+    {
+        return Enum.TryParse<LibraryNodeType>(rawValue, out var nodeType)
+            ? nodeType
+            : LibraryNodeType.Generic;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\LibrarySeedFactory.cs
+========================================================================================================================
+namespace TrackerApp;
+
+internal static class LibrarySeedFactory
+{
+    public const string SeedVersion = "library-hebrew-tanakh-talmud-v1";
+
+    private static readonly Lazy<IReadOnlyList<TalmudCollectionMetadata>> Collections = new(BuildCollections);
+    private static readonly Lazy<Dictionary<string, TalmudTractateMetadata>> TractatesByPath = new(BuildTractateLookup);
+
+    private static readonly string[] BavliMetadataLines = SplitMetadataLines(
+    """
+    סדר זרעים|ברכות|1:2-13,2:13-17,3:17-26,4:26-30,5:30-34,6:35-45,7:45-51,8:51-53,9:54-64
+    סדר מועד|שבת|1:2-20,2:20-36,3:36-47,4:47-51,5:51-56,6:57-67,7:67-76,8:76-82,9:82-90,10:90-96,11:96-102,12:102-105,13:105-107,14:107-111,15:111-115,16:115-122,17:122-126,18:126-129,19:130-137,20:137-141,21:141-143,22:143-148,23:148-153,24:153-157
+    סדר מועד|עירובין|1:2-17,2:17-26,3:26-41,4:41-52,5:52-61,6:61-76,7:76-82,8:82-89,9:89-95,10:95-105
+    סדר מועד|פסחים|1:2-21,2:21-42,3:42-50,4:50-57,5:58-65,6:65-73,7:74-86,8:87-92,9:92-99,10:99-121
+    סדר מועד|שקלים|1:2-4,2:4-6,3:6-9,4:9-12,5:12-14,6:14-17,7:17-20,8:20-22
+    סדר מועד|יומא|1:2-21,2:22-28,3:28-39,4:39-46,5:47-62,6:62-68,7:68-73,8:73-88
+    סדר מועד|סוכה|1:2-20,2:20-29,3:29-42,4:42-50,5:50-56
+    סדר מועד|ביצה|1:2-15,2:15-23,3:23-29,4:29-35,5:35-40
+    סדר מועד|ראש השנה|1:2-22,2:22-25,3:25-29,4:29-35
+    סדר מועד|תענית|1:2-15,2:15-18,3:18-26,4:26-31
+    סדר מועד|מגילה|1:2-17,2:17-21,3:21-25,4:25-32
+    סדר מועד|מועד קטן|1:2-11,2:11-13,3:13-29
+    סדר מועד|חגיגה|1:2-11,2:11-20,3:20-27
+    סדר נשים|יבמות|1:2-17,2:17-26,3:26-35,4:35-50,5:50-53,6:53-66,7:66-70,8:70-84,9:84-87,10:87-97,11:97-101,12:101-106,13:107-112,14:112-114,15:114-118,16:119-122
+    סדר נשים|כתובות|1:2-15,2:15-28,3:29-41,4:41-54,5:54-65,6:65-70,7:70-77,8:78-82,9:83-90,10:90-95,11:95-101,12:101-104,13:104-112
+    סדר נשים|נדרים|1:2-13,2:13-20,3:20-32,4:32-45,5:45-48,6:49-53,7:54-60,8:60-63,9:64-66,10:66-79,11:79-91
+    סדר נשים|נזיר|1:2-8,2:9-16,3:16-20,4:20-30,5:30-34,6:34-47,7:47-57,8:57-61,9:61-66
+    סדר נשים|סוטה|1:2-14,2:14-19,3:19-23,4:23-27,5:27-31,6:31-32,7:32-42,8:42-44,9:44-49
+    סדר נשים|גיטין|1:2-15,2:15-24,3:24-32,4:32-48,5:48-62,6:62-67,7:67-77,8:77-82,9:82-90
+    סדר נשים|קידושין|1:2-41,2:41-58,3:58-69,4:69-82
+    סדר נזיקין|בבא קמא|1:2-17,2:17-27,3:27-36,4:36-46,5:46-55,6:55-62,7:62-83,8:83-93,9:93-111,10:111-119
+    סדר נזיקין|בבא מציעא|1:2-21,2:21-33,3:33-44,4:44-60,5:60-75,6:75-83,7:83-94,8:94-103,9:103-116,10:116-119
+    סדר נזיקין|בבא בתרא|1:2-17,2:17-27,3:28-60,4:61-73,5:73-91,6:92-102,7:102-108,8:108-139,9:139-159,10:160-176
+    סדר נזיקין|סנהדרין|1:2-18,2:18-22,3:23-31,4:32-39,5:40-42,6:42-49,7:49-68,8:68-75,9:75-84,10:84-90,11:90-113
+    סדר נזיקין|מכות|1:2-7,2:7-13,3:13-24
+    סדר נזיקין|שבועות|1:2-14,2:14-19,3:19-29,4:30-36,5:36-38,6:38-44,7:44-49,8:49-49
+    סדר נזיקין|עבודה זרה|1:2-22,2:22-40,3:40-49,4:49-61,5:62-76
+    סדר נזיקין|הוריות|1:2-6,2:6-9,3:9-14
+    סדר קדשים|זבחים|1:2-15,2:15-31,3:31-36,4:36-47,5:47-57,6:58-66,7:66-70,8:70-83,9:83-88,10:89-92,11:92-98,12:98-106,13:106-112,14:112-120
+    סדר קדשים|מנחות|1:2-13,2:13-17,3:17-38,4:38-52,5:52-63,6:63-72,7:72-76,8:76-83,9:83-87,10:87-94,11:94-100,12:100-104,13:104-110
+    סדר קדשים|חולין|1:2-26,2:27-42,3:42-67,4:68-78,5:78-83,6:83-89,7:89-103,8:103-117,9:117-129,10:130-134,11:135-138,12:138-142
+    סדר קדשים|בכורות|1:2-13,2:13-19,3:19-26,4:26-31,5:31-37,6:37-43,7:43-46,8:46-52,9:53-61
+    סדר קדשים|ערכין|1:2-7,2:7-13,3:13-17,4:17-19,5:19-21,6:21-24,7:24-27,8:27-29,9:29-34
+    סדר קדשים|תמורה|1:2-13,2:14-17,3:17-21,4:21-24,5:24-27,6:28-31,7:31-34
+    סדר קדשים|כריתות|1:2-8,2:8-11,3:11-17,4:17-20,5:20-23,6:23-28
+    סדר קדשים|מעילה|1:2-8,2:8-10,3:10-14,4:15-18,5:18-20,6:20-22
+    סדר קדשים|תמיד|1:25-28,2:28-30,3:30-30,4:30-32,5:32-33,6:33-33,7:33-33
+    סדר טהרות|נדה|1:2-12,2:13-21,3:21-31,4:31-39,5:40-48,6:48-54,7:54-57,8:57-59,9:59-64,10:64-73
+    """);
+
+    private static readonly string[] YerushalmiMetadataLines = SplitMetadataLines(
+    """
+    סדר זרעים|ברכות|1:1a-11b,2:12a-21a,3:21b-29a,4:29a-36b,5:36b-41a,6:41a-50b,7:51a-56b,8:56b-62a,9:62a-68a
+    סדר זרעים|פאה|1:1a-9b,2:10b-14a,3:14a-19b,4:20a-24b,5:24b-27b,6:28a-31a,7:31b-35a,8:35a-37b
+    סדר זרעים|דמאי|1:1a-6a,2:7a-11a,3:11b-16b,4:16b-19b,5:19b-24b,6:25a-29b,7:29b-34a
+    סדר זרעים|כלאים|1:1a-5b,2:6a-12b,3:13a-18b,4:18b-23a,5:23b-27b,6:28a-31b,7:31b-35b,8:35b-39b,9:39b-44b
+    סדר זרעים|שביעית|1:1a-3a,2:3a-6b,3:6b-9b,4:9b-13a,5:13a-15b,6:15b-18a,7:18b-21a,8:21b-24b,9:24b-27b,10:27b-31a
+    סדר זרעים|תרומות|1:1a-8b,2:8b-14a,3:14b-18a,4:18a-25a,5:25a-30b,6:31a-34b,7:34b-38b,8:38b-47a,9:47b-50b,10:50b-54b,11:54b-59a
+    סדר זרעים|מעשרות|1:1a-6b,2:7a-12a,3:12b-18a,4:18b-20b,5:21a-26b
+    סדר זרעים|מעשר שני|1:1a-8a,2:8a-14a,3:14a-20b,4:20b-27b,5:28a-33b
+    סדר זרעים|חלה|1:1a-9b,2:10a-14b,3:14b-22b,4:22b-28b
+    סדר זרעים|ערלה|1:1a-8a,2:8b-16b,3:16b-20b
+    סדר זרעים|בכורים|1:1a-6a,2:6b-10b,3:10b-13a
+    סדר מועד|שבת|1:1a-14a,2:14b-20b,3:21a-28a,4:28a-31a,5:31a-33a,6:33a-39b,7:40a-53b,8:54a-57a,9:57a-61b,10:61b-64b,11:64b-68a,12:68a-71a,13:71a-74a,14:74a-77a,15:77a-78b,16:78b-81b,17:82a-84a,18:84a-86a,19:86a-90b,20:90b-92a,21:92a-92a,22:92a-92a,23:92a-92b,24:92b-92b
+    סדר מועד|עירובין|1:1a-13a,2:13b-18a,3:18a-26b,4:26b-30b,5:30b-37b,6:38a-45a,7:45a-50a,8:50b-55b,9:56a-58b,10:58b-65b
+    סדר מועד|פסחים|1:1a-10a,2:10b-19a,3:19b-24b,4:25a-30b,5:30b-38b,6:39a-46a,7:46a-57b,8:57b-63b,9:63b-68a,10:68a-71b
+    סדר מועד|ביצה|1:1a-9b,2:9b-13a,3:13a-16a,4:16a-19a,5:19a-22b
+    סדר מועד|ראש השנה|1:1a-10a,2:10b-14b,3:14b-18a,4:18a-22a
+    סדר מועד|יומא|1:1a-8a,2:8a-13b,3:13b-20a,4:20a-24a,5:24b-32a,6:32a-36b,7:36b-38b,8:38b-42b
+    סדר מועד|סוכה|1:1a-8a,2:8a-12a,3:12a-17b,4:17b-22a,5:22a-26b
+    סדר מועד|תענית|1:1a-7b,2:7b-13b,3:13b-17b,4:17b-26b
+    סדר מועד|שקלים|1:1a-7b,2:7b-11b,3:11b-14b,4:15a-20b,5:21a-24a,6:24a-28a,7:28b-31b,8:31b-33b
+    סדר מועד|מגילה|1:1a-18a,2:18a-22b,3:22b-27b,4:27b-34a
+    סדר מועד|חגיגה|1:1a-8a,2:8a-14b,3:15a-22b
+    סדר מועד|מועד קטן|1:1a-7a,2:7b-9b,3:10a-19b
+    סדר נשים|יבמות|1:1a-9a,2:9b-15b,3:15b-22a,4:22a-30a,5:30a-34b,6:34b-38b,7:38b-43a,8:43a-50b,9:51a-53a,10:53a-60a,11:60a-65b,12:65b-69b,13:69b-75b,14:75b-77a,15:77a-81b,16:81b-85a
+    סדר נשים|סוטה|1:1a-8b,2:8b-13b,3:13b-18b,4:18b-20b,5:20b-26a,6:26a-29a,7:29a-34a,8:34a-39b,9:39b-47a
+    סדר נשים|כתובות|1:1a-8b,2:9a-15a,3:15b-23a,4:23a-31a,5:31b-38b,6:38b-42b,7:43a-47a,8:47b-51a,9:51a-57b,10:58a-61a,11:61a-64a,12:64b-67b,13:67b-72a
+    סדר נשים|נדרים|1:1a-5a,2:5a-7b,3:7b-13a,4:13a-17a,5:17a-19b,6:19b-24a,7:24a-25b,8:26a-28b,9:28b-31b,10:31b-35b,11:35b-40a
+    סדר נשים|נזיר|1:1a-5a,2:5a-11a,3:11a-16a,4:16a-20a,5:20a-24a,6:24a-32b,7:32b-38b,8:38b-42a,9:42a-47b
+    סדר נשים|גיטין|1:1a-9a,2:9a-14a,3:14b-19b,4:19b-26a,5:26a-33b,6:34a-38b,7:38b-44a,8:44a-49b,9:49b-54b
+    סדר נשים|קידושין|1:1a-23a,2:23a-31a,3:31a-41b,4:41b-48b
+    סדר נזיקין|בבא קמא|1:1a-6b,2:7a-11b,3:11b-17a,4:17b-23a,5:23a-26b,6:26b-30a,7:30a-34a,8:34a-37a,9:37b-42a,10:42a-44b
+    סדר נזיקין|בבא מציעא|1:1a-6a,2:6a-10a,3:10a-13b,4:13b-18b,5:18b-24b,6:25a-27b,7:27b-29b,8:29b-32a,9:32a-35b,10:35b-37a
+    סדר נזיקין|בבא בתרא|1:1a-3b,2:3b-7b,3:7b-13a,4:13a-15a,5:15b-18a,6:18a-20a,7:20a-21a,8:21b-26b,9:26b-30b,10:30b-34a
+    סדר נזיקין|שבועות|1:1a-8a,2:8b-11b,3:11b-19a,4:19a-23a,5:23a-27b,6:27b-33a,7:33b-39b,8:39b-44b
+    סדר נזיקין|מכות|1:1a-4b,2:5a-8a,3:8a-9b
+    סדר נזיקין|סנהדרין|1:1a-9b,2:9b-13b,3:13b-20b,4:20b-23b,5:24a-27a,6:27a-30a,7:30a-41a,8:41b-44b,9:44b-48b,10:49a-54b,11:54b-57b
+    סדר נזיקין|עבודה זרה|1:1a-8b,2:8b-18a,3:18a-25a,4:25a-31a,5:31a-37b
+    סדר נזיקין|הוריות|1:1a-8a,2:8a-11b,3:11b-19b
+    סדר טהרות|נדה|1:1a-6a,2:6a-9a,3:9a-12b,4:12b-13a
+    """);
+
+    public static IReadOnlyList<LibrarySeedNode> GetDefaultHierarchy()
+    {
+        return
+        [
+            BuildTanakhTree(),
+            BuildTalmudTree()
+        ];
+    }
+
+    public static IReadOnlyList<(string[] Path, string Topic, string Question, string Answer)> GetSampleCards()
+    {
+        return
+        [
+            (
+                new[] { "תלמוד", "תלמוד בבלי", "סדר זרעים", "ברכות", "פרק א", "דף ב" },
+                "קריאת שמע של ערבית",
+                "מדוע מסכת ברכות פותחת בזמן קריאת שמע של ערבית?",
+                "הפתיחה קושרת את קבלת עול מלכות שמים לסדרי היום ההלכתיים, וממקמת את עבודת האדם כבר מתחילת הלילה."
+            ),
+            (
+                new[] { "תלמוד", "תלמוד בבלי", "סדר מועד", "שבת", "פרק ב", "דף כ" },
+                "במה מדליקין",
+                "מה עיקר עניינו של פרק במה מדליקין?",
+                "הפרק עוסק בחומרי ההדלקה והפתילה, בגדרי שמן הראוי לנר שבת, וביחס בין הידור המצוה לחשש כיבוי והטיה."
+            ),
+            (
+                new[] { "תלמוד", "תלמוד ירושלמי", "סדר זרעים", "ברכות", "פרק א", "דף א ע\"א" },
+                "סמיכות גאולה לתפילה",
+                "כיצד מדגיש הירושלמי את הערך של סמיכות גאולה לתפילה?",
+                "הירושלמי מדגיש את הרצף בין הזכרת הגאולה לבין העמידה לפני ה', ומתאר זאת כביטוי של אמונה חיה והישענות מלאה על גאולת ישראל."
+            )
+        ];
+    }
+
+    public static bool HasLazyChildren(IReadOnlyList<string> pathSegments)
+    {
+        return pathSegments.Count switch
+        {
+            4 => TryGetTractate(pathSegments, out _),
+            5 => TryGetChapter(pathSegments, out _, out _),
+            _ => false
+        };
+    }
+
+    public static IReadOnlyList<LibrarySeedNode> GetLazyChildren(IReadOnlyList<string> pathSegments)
+    {
+        if (pathSegments.Count == 4 && TryGetTractate(pathSegments, out var tractate))
+        {
+            return tractate.Chapters
+                .Select(chapter => Node(
+                    $"פרק {ToHebrewNumeral(chapter.Number)}",
+                    LibraryNodeType.Chapter,
+                    string.Empty,
+                    $"{tractate.Name}|{chapter.Number}"))
+                .ToArray();
+        }
+
+        if (pathSegments.Count == 5 && TryGetChapter(pathSegments, out tractate, out var chapter))
+        {
+            return EnumeratePageNames(tractate.Addressing, chapter)
+                .Select(pageName => Leaf(pageName, LibraryNodeType.Page, string.Empty, pageName))
+                .ToArray();
+        }
+
+        return [];
+    }
+
+    public static string ToHebrewNumeral(int number)
+    {
+        if (number <= 0)
+        {
+            return number.ToString();
+        }
+
+        var result = "";
+        while (number >= 400)
+        {
+            result += "ת";
+            number -= 400;
+        }
+
+        string[] hundreds = ["", "ק", "ר", "ש"];
+        string[] tens = ["", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ"];
+        string[] ones = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
+
+        if (number >= 100)
+        {
+            result += hundreds[number / 100];
+            number %= 100;
+        }
+
+        if (number == 15)
+        {
+            return result + "טו";
+        }
+
+        if (number == 16)
+        {
+            return result + "טז";
+        }
+
+        if (number >= 10)
+        {
+            result += tens[number / 10];
+            number %= 10;
+        }
+
+        if (number > 0)
+        {
+            result += ones[number];
+        }
+
+        return result;
+    }
+
+    private static IReadOnlyList<TalmudCollectionMetadata> BuildCollections()
+    {
+        return
+        [
+            BuildCollection("תלמוד בבלי", TalmudAddressing.Bavli, BavliMetadataLines),
+            BuildCollection("תלמוד ירושלמי", TalmudAddressing.Yerushalmi, YerushalmiMetadataLines)
+        ];
+    }
+
+    private static TalmudCollectionMetadata BuildCollection(string name, TalmudAddressing addressing, IEnumerable<string> metadataLines)
+    {
+        var tractates = metadataLines.Select(line => ParseTractate(name, addressing, line)).ToArray();
+        var sedarim = tractates
+            .GroupBy(tractate => tractate.SederName)
+            .Select(group => new TalmudSederMetadata(group.Key, group.ToArray()))
+            .ToArray();
+
+        return new TalmudCollectionMetadata(name, addressing, sedarim);
+    }
+
+    private static TalmudTractateMetadata ParseTractate(string collectionName, TalmudAddressing addressing, string line)
+    {
+        var segments = line.Split('|', StringSplitOptions.TrimEntries);
+        if (segments.Length != 3)
+        {
+            throw new InvalidOperationException($"Invalid metadata line: {line}");
+        }
+
+        var chapters = segments[2]
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(ParseChapter)
+            .OrderBy(chapter => chapter.Number)
+            .ToArray();
+
+        return new TalmudTractateMetadata(collectionName, segments[0], segments[1], addressing, chapters);
+    }
+
+    private static TalmudChapterMetadata ParseChapter(string value)
+    {
+        var parts = value.Split(':', StringSplitOptions.TrimEntries);
+        if (parts.Length != 2)
+        {
+            throw new InvalidOperationException($"Invalid chapter range: {value}");
+        }
+
+        var range = parts[1].Split('-', StringSplitOptions.TrimEntries);
+        if (range.Length != 2 || !int.TryParse(parts[0], out var number))
+        {
+            throw new InvalidOperationException($"Invalid chapter range: {value}");
+        }
+
+        return new TalmudChapterMetadata(number, range[0], range[1]);
+    }
+
+    private static Dictionary<string, TalmudTractateMetadata> BuildTractateLookup()
+    {
+        return Collections.Value
+            .SelectMany(collection => collection.Sedarim)
+            .SelectMany(seder => seder.Tractates)
+            .ToDictionary(
+                tractate => BuildTractateKey(tractate.CollectionName, tractate.SederName, tractate.Name),
+                tractate => tractate,
+                StringComparer.Ordinal);
+    }
+
+    private static LibrarySeedNode BuildTalmudTree()
+    {
+        return Node("תלמוד", LibraryNodeType.Category, string.Empty, "Talmud", Collections.Value.Select(BuildCollectionNode));
+    }
+
+    private static LibrarySeedNode BuildTanakhTree()
+    {
+        return Node(
+            "תנ\"ך",
+            LibraryNodeType.Category,
+            "Sefaria",
+            "Tanakh",
+            Node("תורה", LibraryNodeType.Section, "Sefaria", "Tanakh/Torah"),
+            Node("נביאים", LibraryNodeType.Section, "Sefaria", "Tanakh/Prophets"),
+            Node("כתובים", LibraryNodeType.Section, "Sefaria", "Tanakh/Writings"));
+    }
+
+    private static LibrarySeedNode BuildCollectionNode(TalmudCollectionMetadata collection)
+    {
+        return Node(collection.Name, LibraryNodeType.Category, string.Empty, collection.Name, collection.Sedarim.Select(BuildSederNode));
+    }
+
+    private static LibrarySeedNode BuildSederNode(TalmudSederMetadata seder)
+    {
+        return Node(seder.Name, LibraryNodeType.Section, string.Empty, seder.Name, seder.Tractates.Select(tractate => Leaf(tractate.Name, LibraryNodeType.Book, string.Empty, tractate.Name)));
+    }
+
+    private static IEnumerable<string> EnumeratePageNames(TalmudAddressing addressing, TalmudChapterMetadata chapter)
+    {
+        return addressing switch
+        {
+            TalmudAddressing.Bavli => EnumerateBavliPageNames(chapter),
+            TalmudAddressing.Yerushalmi => EnumerateYerushalmiPageNames(chapter),
+            _ => []
+        };
+    }
+
+    private static IEnumerable<string> EnumerateBavliPageNames(TalmudChapterMetadata chapter)
+    {
+        var start = int.Parse(chapter.StartPage, System.Globalization.CultureInfo.InvariantCulture);
+        var end = int.Parse(chapter.EndPage, System.Globalization.CultureInfo.InvariantCulture);
+        for (var daf = start; daf <= end; daf++)
+        {
+            yield return $"דף {ToHebrewNumeral(daf)}";
+        }
+    }
+
+    private static IEnumerable<string> EnumerateYerushalmiPageNames(TalmudChapterMetadata chapter)
+    {
+        var current = ParseYerushalmiAddress(chapter.StartPage);
+        var end = ParseYerushalmiAddress(chapter.EndPage);
+
+        while (true)
+        {
+            yield return FormatYerushalmiPageLabel(current);
+            if (current == end)
+            {
+                yield break;
+            }
+
+            current = AdvanceYerushalmiAddress(current);
+        }
+    }
+
+    private static YerushalmiAddress ParseYerushalmiAddress(string value)
+    {
+        if (value.Length < 2)
+        {
+            throw new InvalidOperationException($"Invalid Yerushalmi address: {value}");
+        }
+
+        var side = value[^1];
+        var numberPart = value[..^1];
+        if (!int.TryParse(numberPart, out var folio) || (side != 'a' && side != 'b'))
+        {
+            throw new InvalidOperationException($"Invalid Yerushalmi address: {value}");
+        }
+
+        return new YerushalmiAddress(folio, side);
+    }
+
+    private static YerushalmiAddress AdvanceYerushalmiAddress(YerushalmiAddress current)
+    {
+        return current.Side == 'a'
+            ? current with { Side = 'b' }
+            : new YerushalmiAddress(current.Folio + 1, 'a');
+    }
+
+    private static string FormatYerushalmiPageLabel(YerushalmiAddress address)
+    {
+        return $"דף {ToHebrewNumeral(address.Folio)} {(address.Side == 'a' ? "ע\"א" : "ע\"ב")}";
+    }
+
+    private static bool TryGetTractate(IReadOnlyList<string> pathSegments, out TalmudTractateMetadata tractate)
+    {
+        if (pathSegments.Count < 4 || pathSegments[0] != "תלמוד")
+        {
+            tractate = default!;
+            return false;
+        }
+
+        return TractatesByPath.Value.TryGetValue(BuildTractateKey(pathSegments[1], pathSegments[2], pathSegments[3]), out tractate!);
+    }
+
+    private static bool TryGetChapter(
+        IReadOnlyList<string> pathSegments,
+        out TalmudTractateMetadata tractate,
+        out TalmudChapterMetadata chapter)
+    {
+        chapter = default!;
+        if (!TryGetTractate(pathSegments, out tractate))
+        {
+            return false;
+        }
+
+        if (pathSegments.Count < 5 || !TryParseChapterName(pathSegments[4], out var chapterNumber))
+        {
+            return false;
+        }
+
+        chapter = tractate.Chapters.FirstOrDefault(candidate => candidate.Number == chapterNumber)!;
+        return chapter is not null;
+    }
+
+    private static bool TryParseChapterName(string chapterName, out int chapterNumber)
+    {
+        const string prefix = "פרק ";
+        if (!chapterName.StartsWith(prefix, StringComparison.Ordinal))
+        {
+            chapterNumber = 0;
+            return false;
+        }
+
+        return TryParseHebrewNumeral(chapterName[prefix.Length..], out chapterNumber);
+    }
+
+    private static bool TryParseHebrewNumeral(string value, out int result)
+    {
+        result = 0;
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return false;
+        }
+
+        foreach (var letter in value.Trim())
+        {
+            if (!HebrewNumeralValues.TryGetValue(letter, out var number))
+            {
+                return false;
+            }
+
+            result += number;
+        }
+
+        return result > 0;
+    }
+
+    private static string BuildTractateKey(string collectionName, string sederName, string tractateName)
+    {
+        return $"{collectionName}|{sederName}|{tractateName}";
+    }
+
+    private static string[] SplitMetadataLines(string metadataBlock)
+    {
+        return metadataBlock
+            .Split(['\r', '\n'], StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+    }
+
+    private static LibrarySeedNode Node(
+        string name,
+        LibraryNodeType nodeType,
+        string sourceSystem,
+        string sourceKey,
+        params LibrarySeedNode[] children) => new(name, children, nodeType, sourceSystem, sourceKey);
+
+    private static LibrarySeedNode Node(
+        string name,
+        LibraryNodeType nodeType,
+        string sourceSystem,
+        string sourceKey,
+        IEnumerable<LibrarySeedNode> children) => new(name, children.ToArray(), nodeType, sourceSystem, sourceKey);
+
+    private static LibrarySeedNode Leaf(
+        string name,
+        LibraryNodeType nodeType,
+        string sourceSystem,
+        string sourceKey) => new(name, [], nodeType, sourceSystem, sourceKey);
+
+    private static readonly IReadOnlyDictionary<char, int> HebrewNumeralValues = new Dictionary<char, int>
+    {
+        ['א'] = 1,
+        ['ב'] = 2,
+        ['ג'] = 3,
+        ['ד'] = 4,
+        ['ה'] = 5,
+        ['ו'] = 6,
+        ['ז'] = 7,
+        ['ח'] = 8,
+        ['ט'] = 9,
+        ['י'] = 10,
+        ['כ'] = 20,
+        ['ך'] = 20,
+        ['ל'] = 30,
+        ['מ'] = 40,
+        ['ם'] = 40,
+        ['נ'] = 50,
+        ['ן'] = 50,
+        ['ס'] = 60,
+        ['ע'] = 70,
+        ['פ'] = 80,
+        ['ף'] = 80,
+        ['צ'] = 90,
+        ['ץ'] = 90,
+        ['ק'] = 100,
+        ['ר'] = 200,
+        ['ש'] = 300,
+        ['ת'] = 400
+    };
+}
+
+internal sealed record LibrarySeedNode(
+    string Name,
+    IReadOnlyList<LibrarySeedNode> Children,
+    LibraryNodeType NodeType = LibraryNodeType.Generic,
+    string SourceSystem = "",
+    string SourceKey = "");
+
+internal enum TalmudAddressing
+{
+    Bavli,
+    Yerushalmi
+}
+
+internal sealed record TalmudCollectionMetadata(
+    string Name,
+    TalmudAddressing Addressing,
+    IReadOnlyList<TalmudSederMetadata> Sedarim);
+
+internal sealed record TalmudSederMetadata(
+    string Name,
+    IReadOnlyList<TalmudTractateMetadata> Tractates);
+
+internal sealed record TalmudTractateMetadata(
+    string CollectionName,
+    string SederName,
+    string Name,
+    TalmudAddressing Addressing,
+    IReadOnlyList<TalmudChapterMetadata> Chapters);
+
+internal sealed record TalmudChapterMetadata(int Number, string StartPage, string EndPage);
+
+internal readonly record struct YerushalmiAddress(int Folio, char Side);
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\MainForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class MainForm : Form
+{
+    private const string DummyNodeText = "...";
+    private static readonly Dictionary<string, string> HebrewMap = new(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Talmud"] = "תלמוד",
+        ["Bavli"] = "בבלי",
+        ["Berakhot"] = "ברכות",
+        ["Shabbat"] = "שבת",
+        ["Eruvin"] = "עירובין",
+        ["Pesachim"] = "פסחים",
+        ["Yoma"] = "יומא",
+        ["Sukkah"] = "סוכה",
+        ["Bava Kamma"] = "בבא קמא",
+        ["Sanhedrin"] = "סנהדרין",
+        ["Mishnah"] = "משנה",
+        ["Zeraim"] = "זרעים",
+        ["Peah"] = "פאה",
+        ["Moed"] = "מועד",
+        ["Nashim"] = "נשים",
+        ["Ketubot"] = "כתובות",
+        ["Nezikin"] = "נזיקין",
+        ["Avot"] = "אבות",
+        ["Kodashim"] = "קדשים",
+        ["Zevachim"] = "זבחים",
+        ["Taharot"] = "טהרות",
+        ["Mikvaot"] = "מקוואות",
+        ["Shulchan Aruch"] = "שולחן ערוך",
+        ["Orach Chaim"] = "אורח חיים",
+        ["Hilchot Tefillah"] = "הלכות תפילה",
+        ["Hilchot Shabbat"] = "הלכות שבת",
+        ["Hilchot Yom Tov"] = "הלכות יום טוב",
+        ["Yoreh Deah"] = "יורה דעה",
+        ["Kashrut"] = "כשרות",
+        ["Even HaEzer"] = "אבן העזר",
+        ["Marriage"] = "נישואין",
+        ["Choshen Mishpat"] = "חושן משפט",
+        ["Damages"] = "נזיקין",
+        ["Rashi"] = "רש\"י",
+        ["Torah"] = "תורה",
+        ["Bereshit"] = "בראשית",
+        ["Shemot"] = "שמות",
+        ["Prophets"] = "נביאים",
+        ["Isaiah"] = "ישעיהו",
+        ["Writings"] = "כתובים",
+        ["Psalms"] = "תהילים",
+        ["Book of Isaiah"] = "ספר ישעיהו"
+    };
+
+    private readonly AppDatabase _database;
+    private readonly TreeView _subjectTreeView = new();
+    private readonly FlowLayoutPanel _cardPanel = new();
+    private readonly StatusViewControl _statusView = new();
+    private readonly Label _contentTitleLabel = new();
+    private readonly ToolStripStatusLabel _statusLabel = new();
+    private readonly ToolStripMenuItem _questionsTabItem = new();
+    private readonly ToolStripMenuItem _statusTabItem = new();
+    private readonly TanakhVerificationRequest? _verificationRequest;
+    private int? _selectedSubjectId;
+    private bool _verificationStarted;
+
+    public MainForm(AppDatabase database, TanakhVerificationRequest? verificationRequest = null)
+    {
+        _database = database;
+        _verificationRequest = verificationRequest;
+
+        Text = "מערכת חזרות";
+        StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(1280, 820);
+        Size = new Size(1500, 940);
+        BackColor = ClassicPalette.WindowBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+
+        BuildLayout();
+        Load += (_, _) => InitializeScreen();
+    }
+
+    private void BuildLayout()
+    {
+        SuspendLayout();
+
+        Controls.Add(CreateMainArea());
+        Controls.Add(CreateTopChrome());
+        Controls.Add(CreateStatusStrip());
+
+        ResumeLayout(true);
+    }
+
+    private Control CreateTopChrome()
+    {
+        var host = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 106,
+            AutoSize = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = ClassicPalette.ToolbarBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+
+        ApplyMirroredRtlWhenAvailable(host);
+
+        host.Controls.Add(CreateTabsBar(), 0, 0);
+        host.Controls.Add(CreateFormattingToolbar(), 0, 1);
+        return host;
+    }
+
+    private Control CreateTabsBar()
+    {
+        var menu = new MenuStrip
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = 58,
+            Stretch = true,
+            RenderMode = ToolStripRenderMode.System,
+            GripStyle = ToolStripGripStyle.Hidden,
+            BackColor = ClassicPalette.ToolbarBackground,
+            ForeColor = Color.White,
+            Padding = new Padding(8, 12, 8, 10),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(menu);
+
+        menu.Items.AddRange(new ToolStripItem[]
+        {
+            CreateTopTab(_questionsTabItem, "שאלות", (_, _) => ShowStudyCards()),
+            CreateTopTab(new ToolStripMenuItem(), "תגיות", (_, _) => ShowPlaceholder("תגיות")),
+            CreateTopTab(new ToolStripMenuItem(), "חיפוש", (_, _) => ShowPlaceholder("חיפוש")),
+            CreateTopTab(new ToolStripMenuItem(), "חזרה יומית", (_, _) => SelectRootAndShowCards()),
+            CreateTopTab(_statusTabItem, "מצב", (_, _) => ShowStatusView()),
+            CreateTopTab(new ToolStripMenuItem(), "גיבוי", (_, _) => BackupDatabase()),
+            CreateTopTab(new ToolStripMenuItem(), "הגדרות", (_, _) => ShowPlaceholder("הגדרות")),
+            CreateTopTab(new ToolStripMenuItem(), "עזרה", (_, _) => ShowHelp()),
+            CreateTopTab(new ToolStripMenuItem(), "אודות", (_, _) => ShowAbout())
+        });
+
+        return menu;
+    }
+
+    private Control CreateFormattingToolbar()
+    {
+        var toolbar = new ToolStrip
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = 48,
+            Stretch = true,
+            GripStyle = ToolStripGripStyle.Hidden,
+            RenderMode = ToolStripRenderMode.System,
+            BackColor = Color.FromArgb(127, 191, 184),
+            Padding = new Padding(8, 8, 8, 8),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes,
+            LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow,
+            CanOverflow = false
+        };
+
+        ApplyMirroredRtlWhenAvailable(toolbar);
+
+        toolbar.Items.Add(CreateFormatCombo());
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("ימין"));
+        toolbar.Items.Add(CreateFormatButton("מרכז"));
+        toolbar.Items.Add(CreateFormatButton("שמאל"));
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("U", new Font("Microsoft Sans Serif", 9F, FontStyle.Bold | FontStyle.Underline)));
+        toolbar.Items.Add(CreateFormatButton("I", new Font("Times New Roman", 10F, FontStyle.Bold | FontStyle.Italic)));
+        toolbar.Items.Add(CreateFormatButton("B", new Font("Microsoft Sans Serif", 10F, FontStyle.Bold)));
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("16"));
+        toolbar.Items.Add(CreateFormatButton("14"));
+        toolbar.Items.Add(CreateFormatButton("12"));
+
+        return toolbar;
+    }
+
+    private Control CreateMainArea()
+    {
+        var container = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.PanelBackground,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(container);
+
+        container.Controls.Add(CreateContentPanel());
+        container.Controls.Add(CreateTreePanel());
+        return container;
+    }
+
+    private Control CreateTreePanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 330,
+            BackColor = ClassicPalette.PanelBackground,
+            Padding = new Padding(6),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(panel);
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "ספריה",
+            Font = new Font(Font, FontStyle.Bold),
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _subjectTreeView.Dock = DockStyle.Fill;
+        _subjectTreeView.BorderStyle = BorderStyle.FixedSingle;
+        _subjectTreeView.HideSelection = false;
+        _subjectTreeView.BackColor = Color.White;
+        _subjectTreeView.RightToLeft = RightToLeft.Yes;
+        _subjectTreeView.BeforeExpand += (_, e) => HandleTreeBeforeExpand(e);
+        _subjectTreeView.AfterSelect += (_, _) => HandleTreeSelection();
+
+        panel.Controls.Add(_subjectTreeView);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private Control CreateContentPanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.PanelBackground,
+            Padding = new Padding(6),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(panel);
+
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 36,
+            BackColor = ClassicPalette.Teal,
+            BorderStyle = BorderStyle.FixedSingle,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(headerPanel);
+
+        var headerActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Left,
+            Width = 290,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        headerActions.Controls.Add(CreateHeaderActionButton("הדפסה", (_, _) => ExportPrintRange()));
+        headerActions.Controls.Add(CreateHeaderActionButton("ייצוא CSV", (_, _) => ExportCsv()));
+        headerActions.Controls.Add(CreateHeaderActionButton("כרטיס חדש", (_, _) => OpenAddDialog()));
+
+        _contentTitleLabel.Dock = DockStyle.Fill;
+        _contentTitleLabel.Font = new Font(Font, FontStyle.Bold);
+        _contentTitleLabel.ForeColor = Color.White;
+        _contentTitleLabel.TextAlign = ContentAlignment.MiddleRight;
+        _contentTitleLabel.RightToLeft = RightToLeft.Yes;
+
+        headerPanel.Controls.Add(headerActions);
+        headerPanel.Controls.Add(_contentTitleLabel);
+
+        _cardPanel.Dock = DockStyle.Fill;
+        _cardPanel.AutoScroll = true;
+        _cardPanel.FlowDirection = FlowDirection.TopDown;
+        _cardPanel.WrapContents = false;
+        _cardPanel.BackColor = ClassicPalette.PanelBackground;
+        _cardPanel.RightToLeft = RightToLeft.Yes;
+        _cardPanel.SizeChanged += (_, _) => ResizeCards();
+
+        _statusView.Dock = DockStyle.Fill;
+        _statusView.Visible = false;
+
+        panel.Controls.Add(_cardPanel);
+        panel.Controls.Add(_statusView);
+        panel.Controls.Add(headerPanel);
+        return panel;
+    }
+
+    private StatusStrip CreateStatusStrip()
+    {
+        var statusStrip = new StatusStrip
+        {
+            Dock = DockStyle.Bottom,
+            RenderMode = ToolStripRenderMode.System,
+            RightToLeft = RightToLeft.Yes,
+            SizingGrip = false
+        };
+
+        ApplyMirroredRtlWhenAvailable(statusStrip);
+
+        _statusLabel.Text = "מוכן";
+        statusStrip.Items.Add(_statusLabel);
+        return statusStrip;
+    }
+
+    private void InitializeScreen()
+    {
+        AppendStartupLog("InitializeScreen start");
+        ReloadTree();
+        _subjectTreeView.SelectedNode = null;
+        _selectedSubjectId = null;
+        ShowStudyCards();
+        ActivateTab(_questionsTabItem);
+        AppendStartupLog($"InitializeScreen complete | root nodes={_subjectTreeView.Nodes.Count}");
+        StartPendingVerificationIfNeeded();
+    }
+
+    private void StartPendingVerificationIfNeeded()
+    {
+        if (_verificationStarted || _verificationRequest is null || IsDisposed)
+        {
+            return;
+        }
+
+        _verificationStarted = true;
+        AppendStartupLog("Queueing Tanakh verification from MainForm");
+        BeginInvoke(new Action(() => _ = RunPendingVerificationAsync()));
+    }
+
+    private async Task RunPendingVerificationAsync()
+    {
+        if (_verificationRequest is null)
+        {
+            return;
+        }
+
+        AppendStartupLog("RunPendingVerificationAsync entered");
+        await RunTanakhVerificationAsync(
+            _verificationRequest.OverviewScreenshotPath,
+            _verificationRequest.DetailScreenshotPath,
+            _verificationRequest.ReportPath);
+    }
+
+    private void ReloadTree()
+    {
+        _subjectTreeView.BeginUpdate();
+        _subjectTreeView.Nodes.Clear();
+        PopulateTreeNodes(_subjectTreeView.Nodes, _database.GetTreeChildren(null));
+        _subjectTreeView.EndUpdate();
+    }
+
+    private void HandleTreeBeforeExpand(TreeViewCancelEventArgs e)
+    {
+        if (e.Node?.Nodes.Count == 1 && e.Node.Nodes[0].Text == DummyNodeText)
+        {
+            if (!TryPopulateTreeChildren(e.Node))
+            {
+                e.Cancel = true;
+            }
+        }
+    }
+
+    private void PopulateTreeChildren(TreeNode parentNode)
+    {
+        if (parentNode.Tag is not int parentId)
+        {
+            return;
+        }
+
+        _database.EnsureSubjectChildrenLoaded(parentId);
+        parentNode.Nodes.Clear();
+        PopulateTreeNodes(parentNode.Nodes, _database.GetTreeChildren(parentId));
+    }
+
+    private bool TryPopulateTreeChildren(TreeNode parentNode)
+    {
+        try
+        {
+            PopulateTreeChildren(parentNode);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            parentNode.Nodes.Clear();
+            parentNode.Nodes.Add(new TreeNode(DummyNodeText));
+            ShowTreeLoadError(exception);
+            return false;
+        }
+    }
+
+    private static void PopulateTreeNodes(TreeNodeCollection targetNodes, IReadOnlyList<SubjectNodeModel> subjects)
+    {
+        foreach (var subject in subjects)
+        {
+            var node = new TreeNode(subject.Name) { Tag = subject.Id };
+            if (subject.HasChildren)
+            {
+                node.Nodes.Add(new TreeNode(DummyNodeText));
+            }
+
+            targetNodes.Add(node);
+        }
+    }
+
+    private void HandleTreeSelection()
+    {
+        if (_subjectTreeView.SelectedNode?.Tag is int subjectId)
+        {
+            _selectedSubjectId = subjectId;
+            ShowStudyCards();
+        }
+    }
+
+    private void ShowStudyCards()
+    {
+        _statusView.Visible = false;
+        _cardPanel.Visible = true;
+        ActivateTab(_questionsTabItem);
+
+        var items = _database.GetStudyItemsForSubject(_selectedSubjectId);
+        _contentTitleLabel.Text = _selectedSubjectId.HasValue
+            ? $"שאלות / {TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value))}"
+            : "שאלות / כל הספריה";
+
+        PopulateCards(items);
+        var dueCount = items.Count(item => item.IsDue);
+        _statusLabel.Text = $"נטענו {items.Count} כרטיסים | לביצוע כעת: {dueCount}";
+    }
+
+    private void ShowStatusView()
+    {
+        _cardPanel.Visible = false;
+        _statusView.Visible = true;
+        ActivateTab(_statusTabItem);
+        _contentTitleLabel.Text = "מצב / סטטיסטיקה";
+
+        var stats = _database.GetDashboardStats();
+        _statusView.Bind(stats);
+        _statusLabel.Text = $"סה\"כ {stats.TotalItems} פריטים | לביצוע היום {stats.DueToday} | שימור {stats.RetentionRate:0.#}%";
+    }
+
+    private void PopulateCards(IReadOnlyList<StudyItemModel> items)
+    {
+        _cardPanel.SuspendLayout();
+        foreach (Control control in _cardPanel.Controls)
+        {
+            control.Dispose();
+        }
+
+        _cardPanel.Controls.Clear();
+
+        if (items.Count == 0)
+        {
+            var emptyLabel = new Label
+            {
+                AutoSize = false,
+                Width = Math.Max(620, _cardPanel.ClientSize.Width - 30),
+                Height = 72,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = ClassicPalette.CardBackground,
+                Text = "אין כרטיסים בתצוגה זו. בחרו ענף אחר או הוסיפו כרטיס חדש.",
+                TextAlign = ContentAlignment.MiddleCenter,
+                RightToLeft = RightToLeft.Yes
+            };
+
+            _cardPanel.Controls.Add(emptyLabel);
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                var card = new StudyCardControl(item)
+                {
+                    Width = GetCardWidth()
+                };
+
+                card.RatingClicked += (_, rating) => HandleRating(item.Id, rating);
+                card.EditClicked += (_, itemId) => OpenEditDialog(itemId);
+                card.DeleteClicked += (_, itemId) => DeleteCard(itemId);
+                _cardPanel.Controls.Add(card);
+            }
+        }
+
+        _cardPanel.ResumeLayout();
+    }
+
+    private void ResizeCards()
+    {
+        var width = GetCardWidth();
+        foreach (Control control in _cardPanel.Controls)
+        {
+            control.Width = width;
+        }
+    }
+
+    private int GetCardWidth()
+    {
+        return Math.Max(620, _cardPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24);
+    }
+
+    private void HandleRating(int itemId, ReviewRating rating)
+    {
+        var updated = _database.RateStudyItem(itemId, rating);
+        _statusLabel.Text = $"הכרטיס '{updated.Topic}' סומן כ-{TranslateRating(rating)}. התאריך הבא: {updated.DueDate:dd/MM/yyyy}";
+        RefreshCurrentView();
+    }
+
+    private void RefreshCurrentView()
+    {
+        if (_statusView.Visible)
+        {
+            ShowStatusView();
+            return;
+        }
+
+        ShowStudyCards();
+    }
+
+    private void OpenAddDialog()
+    {
+        var leafSubjects = _database.GetLeafSubjects();
+        using var dialog = new AddStudyItemForm(leafSubjects, _selectedSubjectId);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            _database.AddStudyItem(dialog.SelectedSubjectId, dialog.Topic, dialog.Question, dialog.Answer);
+            ReloadTree();
+            SelectNodeBySubjectId(dialog.SelectedSubjectId);
+            ShowStudyCards();
+            _statusLabel.Text = $"נוסף כרטיס חדש: {dialog.Topic}";
+        }
+    }
+
+    private void OpenEditDialog(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var leafSubjects = _database.GetLeafSubjects();
+        using var dialog = new AddStudyItemForm(leafSubjects, item.SubjectId, item);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) == DialogResult.OK)
+        {
+            _database.UpdateStudyItem(itemId, dialog.SelectedSubjectId, dialog.Topic, dialog.Question, dialog.Answer);
+            ReloadTree();
+            SelectNodeBySubjectId(dialog.SelectedSubjectId);
+            ShowStudyCards();
+            _statusLabel.Text = $"הכרטיס עודכן: {dialog.Topic}";
+        }
+    }
+
+    private void DeleteCard(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var result = MessageBox.Show(
+            this,
+            $"למחוק את '{item.Topic}'?",
+            "מחיקת כרטיס",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _database.DeleteStudyItem(itemId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"הכרטיס נמחק: {item.Topic}";
+    }
+
+    private void BackupDatabase()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "SQLite database (*.db)|*.db",
+            FileName = $"גיבוי-{DateTime.Today:yyyyMMdd}.db",
+            Title = "גיבוי מסד נתונים"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.BackupDatabase(dialog.FileName);
+        _statusLabel.Text = "הגיבוי נשמר בהצלחה";
+    }
+
+    private void ExportCsv()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "CSV files (*.csv)|*.csv",
+            FileName = "ייצוא-כרטיסים.csv",
+            Title = "ייצוא כרטיסים ל-CSV"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.ExportToCsv(dialog.FileName);
+        _statusLabel.Text = "קובץ ה-CSV נשמר בהצלחה";
+    }
+
+    private void ExportPrintRange()
+    {
+        using var rangeForm = new PrintRangeForm();
+        PrepareDialog(rangeForm);
+        if (rangeForm.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "HTML files (*.html)|*.html",
+            FileName = $"הדפסה-{rangeForm.StartDate:yyyyMMdd}-{rangeForm.EndDate:yyyyMMdd}.html",
+            Title = "ייצוא קובץ HTML להדפסה"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.ExportPrintableHtml(rangeForm.StartDate, rangeForm.EndDate, dialog.FileName);
+        _statusLabel.Text = "קובץ ההדפסה נשמר בהצלחה";
+    }
+
+    private void SelectRootAndShowCards()
+    {
+        _selectedSubjectId = null;
+        _subjectTreeView.SelectedNode = null;
+        ShowStudyCards();
+    }
+
+    private void ShowPlaceholder(string moduleName)
+    {
+        _statusLabel.Text = $"המודול '{moduleName}' מוכן לעיצוב נוסף.";
+    }
+
+    private void ShowHelp()
+    {
+        MessageBox.Show(
+            this,
+            "לשימוש מהיר:\n\n1. בחרו נושא מהעץ הימני.\n2. קראו שאלה ותשובה.\n3. סמנו איכות חזרה.\n4. ערכו או מחקו כרטיסים לפי הצורך.",
+            "עזרה",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    private void ShowAbout()
+    {
+        MessageBox.Show(
+            this,
+            "מערכת חזרות מקומית ללימוד תורה עם מסד SQLite, אלגוריתם SM-2, ייצוא להדפסה וכלי גיבוי.",
+            "אודות",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    private void SelectNodeBySubjectId(int subjectId)
+    {
+        TreeNodeCollection nodes = _subjectTreeView.Nodes;
+        TreeNode? node = null;
+
+        foreach (var subject in _database.GetSubjectLineage(subjectId))
+        {
+            node = FindNode(nodes, subject.Id);
+            if (node is null)
+            {
+                return;
+            }
+
+            if (node.Nodes.Count == 1 && node.Nodes[0].Text == DummyNodeText)
+            {
+                if (!TryPopulateTreeChildren(node))
+                {
+                    return;
+                }
+            }
+
+            nodes = node.Nodes;
+        }
+
+        if (node is not null)
+        {
+            _subjectTreeView.SelectedNode = node;
+            node.EnsureVisible();
+        }
+    }
+
+    private static TreeNode? FindNode(TreeNodeCollection nodes, int subjectId)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (node.Tag is int id && id == subjectId)
+            {
+                return node;
+            }
+
+            var child = FindNode(node.Nodes, subjectId);
+            if (child is not null)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static void PrepareDialog(Form dialog)
+    {
+        dialog.RightToLeft = RightToLeft.Yes;
+        dialog.RightToLeftLayout = false;
+        ApplyRightToLeftRecursive(dialog);
+    }
+
+    private static void ApplyRightToLeftRecursive(Control parent)
+    {
+        parent.RightToLeft = RightToLeft.Yes;
+        ApplyMirroredRtlWhenAvailable(parent);
+
+        foreach (Control child in parent.Controls)
+        {
+            ApplyRightToLeftRecursive(child);
+        }
+    }
+
+    private static string TranslateRating(ReviewRating rating)
+    {
+        return rating switch
+        {
+            ReviewRating.Again => "גרוע",
+            ReviewRating.Hard => "חלש",
+            ReviewRating.Good => "בסדר",
+            ReviewRating.Easy => "טוב",
+            ReviewRating.Perfect => "מצוין",
+            _ => string.Empty
+        };
+    }
+
+    private static string TranslatePath(string path)
+    {
+        return string.Join(" / ", path.Split(" > ", StringSplitOptions.RemoveEmptyEntries).Select(TranslateSegment));
+    }
+
+    private static string TranslateSegment(string value)
+    {
+        if (value.StartsWith("Chapter ", StringComparison.OrdinalIgnoreCase) &&
+            int.TryParse(value["Chapter ".Length..], out var chapterNumber))
+        {
+            return $"פרק {ToHebrewNumber(chapterNumber)}";
+        }
+
+        return HebrewMap.TryGetValue(value, out var translated) ? translated : value;
+    }
+
+    private static string ToHebrewNumber(int number)
+    {
+        string[] ones = ["", "א", "ב", "ג", "ד", "ה", "ו", "ז", "ח", "ט"];
+        string[] tens = ["", "י", "כ", "ל", "מ", "נ", "ס", "ע", "פ", "צ"];
+
+        if (number <= 0)
+        {
+            return number.ToString();
+        }
+
+        if (number < 10)
+        {
+            return ones[number];
+        }
+
+        if (number == 10)
+        {
+            return tens[1];
+        }
+
+        if (number == 15)
+        {
+            return "טו";
+        }
+
+        if (number == 16)
+        {
+            return "טז";
+        }
+
+        if (number < 20)
+        {
+            return $"{tens[1]}{ones[number % 10]}";
+        }
+
+        if (number < 100)
+        {
+            return $"{tens[number / 10]}{ones[number % 10]}";
+        }
+
+        return number.ToString();
+    }
+
+    private static ToolStripMenuItem CreateTopTab(ToolStripMenuItem item, string text, EventHandler onClick)
+    {
+        var font = new Font("Microsoft Sans Serif", 10.5F, FontStyle.Bold);
+        item.Text = text;
+        item.Font = font;
+        item.AutoSize = false;
+        item.Width = Math.Max(116, TextRenderer.MeasureText(text, font).Width + 34);
+        item.Height = 34;
+        item.Margin = new Padding(3, 0, 3, 0);
+        item.Padding = new Padding(12, 4, 12, 4);
+        item.BackColor = ClassicPalette.ToolbarBackground;
+        item.ForeColor = Color.White;
+        item.Click += onClick;
+        return item;
+    }
+
+    private static ToolStripButton CreateFormatButton(string text, Font? font = null)
+    {
+        var resolvedFont = font ?? new Font("Microsoft Sans Serif", 9.5F, FontStyle.Bold);
+        var button = new ToolStripButton
+        {
+            Text = text,
+            AutoSize = false,
+            Width = Math.Max(text.Length > 2 ? 66 : 42, TextRenderer.MeasureText(text, resolvedFont).Width + 18),
+            Height = 28,
+            Margin = new Padding(2, 0, 2, 0),
+            BackColor = Color.FromArgb(216, 242, 239),
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ForeColor = Color.Black
+        };
+
+        button.Font = resolvedFont;
+        return button;
+    }
+
+    private static ToolStripComboBox CreateFormatCombo()
+    {
+        var combo = new ToolStripComboBox
+        {
+            Width = 70,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+
+        combo.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Regular);
+        combo.Items.AddRange(["8", "10", "12", "14", "16", "18"]);
+        combo.SelectedIndex = 2;
+        return combo;
+    }
+
+    private static ToolStripSeparator CreateToolStripSeparator()
+    {
+        return new ToolStripSeparator
+        {
+            Margin = new Padding(4, 0, 4, 0)
+        };
+    }
+
+    private static Button CreateHeaderActionButton(string text, EventHandler onClick)
+    {
+        var font = new Font("Microsoft Sans Serif", 9.5F, FontStyle.Bold);
+        var button = new Button
+        {
+            Text = text,
+            Width = Math.Max(96, TextRenderer.MeasureText(text, font).Width + 22),
+            Height = 28,
+            Margin = new Padding(3, 4, 3, 3),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(208, 237, 234),
+            Font = font
+        };
+
+        button.FlatAppearance.BorderColor = Color.FromArgb(45, 117, 110);
+        button.Click += onClick;
+        return button;
+    }
+
+    private static void ApplyMirroredRtlWhenAvailable(object target)
+    {
+        if (target is Control control)
+        {
+            control.RightToLeft = RightToLeft.Yes;
+        }
+
+        var property = target.GetType().GetProperty("RightToLeftLayout");
+        if (property is not null && property.CanWrite && property.PropertyType == typeof(bool))
+        {
+            property.SetValue(target, true);
+        }
+    }
+
+    private void ActivateTab(ToolStripMenuItem activeItem)
+    {
+        foreach (var item in new[] { _questionsTabItem, _statusTabItem })
+        {
+            item.BackColor = item == activeItem
+                ? Color.FromArgb(72, 155, 147)
+                : ClassicPalette.ToolbarBackground;
+            item.ForeColor = Color.White;
+        }
+    }
+
+    private void ShowTreeLoadError(Exception exception)
+    {
+        MessageBox.Show(
+            this,
+            $"לא ניתן לטעון כעת את נתוני הספרייה.\n\n{exception.Message}",
+            "שגיאת טעינה",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    public async Task RunTanakhVerificationAsync(string overviewScreenshotPath, string detailScreenshotPath, string reportPath)
+    {
+        var expandedPaths = new List<string>();
+        Exception? failure = null;
+        var logPath = Path.ChangeExtension(reportPath, ".log");
+
+        try
+        {
+            AppendVerificationLog(logPath, "self-test start");
+            await Task.Delay(1200);
+
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "תנ\"ך")
+                ?? throw new InvalidOperationException("צומת תנ\"ך לא נמצא בעץ.");
+            AppendVerificationLog(logPath, "tanakh node found");
+
+            await ExpandNodeAsync(tanakhNode, expandedPaths);
+            AppendVerificationLog(logPath, "tanakh expanded");
+
+            var torahNode = FindChildNodeByText(tanakhNode, "תורה")
+                ?? throw new InvalidOperationException("צומת תורה לא נמצא.");
+            var prophetsNode = FindChildNodeByText(tanakhNode, "נביאים")
+                ?? throw new InvalidOperationException("צומת נביאים לא נמצא.");
+            var writingsNode = FindChildNodeByText(tanakhNode, "כתובים")
+                ?? throw new InvalidOperationException("צומת כתובים לא נמצא.");
+            AppendVerificationLog(logPath, "section nodes found");
+
+            await ExpandNodeAsync(torahNode, expandedPaths);
+            AppendVerificationLog(logPath, "torah expanded");
+            await ExpandNodeAsync(prophetsNode, expandedPaths);
+            AppendVerificationLog(logPath, "prophets expanded");
+            await ExpandNodeAsync(writingsNode, expandedPaths);
+            AppendVerificationLog(logPath, "writings expanded");
+
+            var torahBook = FindChildNodeByText(torahNode, "ויקרא") ?? GetFirstRealChild(torahNode);
+            var prophetsBook = FindChildNodeByText(prophetsNode, "יונה") ?? GetFirstRealChild(prophetsNode);
+            var writingsBook = FindChildNodeByText(writingsNode, "רות") ?? GetFirstRealChild(writingsNode);
+
+            if (torahBook is null || prophetsBook is null || writingsBook is null)
+            {
+                throw new InvalidOperationException("לא נמצאו ספרים תחת אחת מקטגוריות התנ\"ך.");
+            }
+
+            _subjectTreeView.SelectedNode = tanakhNode;
+            tanakhNode.EnsureVisible();
+            _subjectTreeView.TopNode = tanakhNode;
+            await Task.Delay(500);
+            AppendVerificationLog(logPath, "overview capture on tanakh");
+            CaptureWindowScreenshot(overviewScreenshotPath);
+
+            await ExpandNodeAsync(torahBook, expandedPaths);
+            AppendVerificationLog(logPath, $"torah book expanded {torahBook.Text}");
+            await ExpandNodeAsync(prophetsBook, expandedPaths);
+            AppendVerificationLog(logPath, $"prophets book expanded {prophetsBook.Text}");
+            await ExpandNodeAsync(writingsBook, expandedPaths);
+            AppendVerificationLog(logPath, $"writings book expanded {writingsBook.Text}");
+
+            var torahChapter = GetFirstRealChild(torahBook)
+                ?? throw new InvalidOperationException("לא נמצאו פרקים בספר התורה שנבחר.");
+            await ExpandNodeAsync(torahChapter, expandedPaths);
+            AppendVerificationLog(logPath, $"chapter expanded {torahChapter.Text}");
+
+            var verseNode = GetFirstRealChild(torahChapter)
+                ?? throw new InvalidOperationException("לא נמצאו פסוקים בפרק שנבחר.");
+            _subjectTreeView.SelectedNode = verseNode;
+            verseNode.EnsureVisible();
+            await Task.Delay(700);
+            AppendVerificationLog(logPath, $"detail capture on {verseNode.Text}");
+            CaptureWindowScreenshot(detailScreenshotPath);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+            AppendVerificationLog(logPath, $"failure: {exception}");
+        }
+        finally
+        {
+            SaveTanakhVerificationReport(reportPath, overviewScreenshotPath, detailScreenshotPath, expandedPaths, failure);
+            AppendVerificationLog(logPath, "report saved");
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private async Task ExpandNodeAsync(TreeNode node, ICollection<string> expandedPaths)
+    {
+        _subjectTreeView.SelectedNode = node;
+        node.EnsureVisible();
+        node.Expand();
+        await Task.Delay(800);
+
+        if (node.Nodes.Count == 1 && node.Nodes[0].Text == DummyNodeText)
+        {
+            if (!TryPopulateTreeChildren(node))
+            {
+                throw new InvalidOperationException($"לא ניתן היה להרחיב את '{node.Text}'.");
+            }
+        }
+
+        expandedPaths.Add(BuildTreePath(node));
+    }
+
+    private void SaveTanakhVerificationReport(
+        string reportPath,
+        string overviewScreenshotPath,
+        string detailScreenshotPath,
+        IReadOnlyCollection<string> expandedPaths,
+        Exception? failure)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+
+        var requests = _database.GetSefariaRequestLog()
+            .Select(entry => new
+            {
+                entry.Endpoint,
+                entry.Success,
+                entry.Transport,
+                entry.Message
+            })
+            .ToArray();
+
+        var payload = new
+        {
+            Success = failure is null,
+            FailureMessage = failure?.Message,
+            OverviewScreenshot = overviewScreenshotPath,
+            DetailScreenshot = detailScreenshotPath,
+            ExpandedPaths = expandedPaths.ToArray(),
+            FetchWorked = requests.Any(entry => entry.Success && entry.Transport is "httpclient" or "node"),
+            Requests = requests
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+        {
+            WriteIndented = true
+        });
+
+        File.WriteAllText(reportPath, json);
+    }
+
+    private void CaptureWindowScreenshot(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+
+        TopMost = true;
+        BringToFront();
+        Activate();
+        Refresh();
+        Application.DoEvents();
+
+        using var bitmap = new Bitmap(Width, Height);
+        DrawToBitmap(bitmap, new Rectangle(Point.Empty, Size));
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+
+        TopMost = false;
+    }
+
+    private static TreeNode? FindNodeByText(TreeNodeCollection nodes, string text)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (string.Equals(node.Text, text, StringComparison.Ordinal))
+            {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? FindChildNodeByText(TreeNode parentNode, string text)
+    {
+        foreach (TreeNode child in parentNode.Nodes)
+        {
+            if (string.Equals(child.Text, text, StringComparison.Ordinal))
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? GetFirstRealChild(TreeNode parentNode)
+    {
+        foreach (TreeNode child in parentNode.Nodes)
+        {
+            if (!string.Equals(child.Text, DummyNodeText, StringComparison.Ordinal))
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildTreePath(TreeNode node)
+    {
+        var segments = new Stack<string>();
+        TreeNode? current = node;
+        while (current is not null)
+        {
+            segments.Push(current.Text);
+            current = current.Parent;
+        }
+
+        return string.Join(" / ", segments);
+    }
+
+    private static void AppendVerificationLog(string logPath, string message)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+
+    private static void AppendStartupLog(string message)
+    {
+        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\startup-trace.log";
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\Models.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public enum LibraryNodeType
+{
+    Generic = 0,
+    Category = 1,
+    Section = 2,
+    Book = 3,
+    Chapter = 4,
+    Verse = 5,
+    Page = 6
+}
+
+public sealed class SubjectNodeModel
+{
+    public int Id { get; init; }
+    public int? ParentId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string DisplayPath { get; init; } = string.Empty;
+    public int SortOrder { get; init; }
+    public bool HasChildren { get; init; }
+    public LibraryNodeType NodeType { get; init; } = LibraryNodeType.Generic;
+    public string SourceSystem { get; init; } = string.Empty;
+    public string SourceKey { get; init; } = string.Empty;
+}
+
+public sealed class StudyItemModel
+{
+    public int Id { get; init; }
+    public int SubjectId { get; init; }
+    public string SubjectPath { get; init; } = string.Empty;
+    public string RootCategory { get; init; } = string.Empty;
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public DateTime CreatedAt { get; init; }
+    public DateTime ModifiedAt { get; init; }
+    public DateTime DueDate { get; init; }
+    public int Level { get; init; }
+    public int TotalReviews { get; init; }
+    public int RepetitionCount { get; init; }
+    public int Lapses { get; init; }
+    public double EaseFactor { get; init; }
+    public double IntervalDays { get; init; }
+    public string LastRating { get; init; } = string.Empty;
+    public DateTime? LastReviewedAt { get; init; }
+    public bool IsDue => DueDate.Date <= DateTime.Today;
+    public bool IsMastered => IntervalDays >= 30 || RepetitionCount >= 5;
+}
+
+public enum ReviewRating
+{
+    Again = 0,
+    Hard = 1,
+    Good = 2,
+    Easy = 3,
+    Perfect = 4
+}
+
+public sealed class ReviewResult
+{
+    public int NextLevel { get; init; }
+    public int NextRepetitionCount { get; init; }
+    public int NextLapses { get; init; }
+    public double NextEaseFactor { get; init; }
+    public double NextIntervalDays { get; init; }
+    public DateTime NextDueDate { get; init; }
+    public bool IsSuccessful { get; init; }
+}
+
+public sealed class SubjectCountModel
+{
+    public string Name { get; init; } = string.Empty;
+    public int Count { get; init; }
+}
+
+public sealed class ReviewTimelinePoint
+{
+    public DateTime Day { get; init; }
+    public double AverageScore { get; init; }
+    public int ReviewCount { get; init; }
+}
+
+public sealed class HeatmapDayModel
+{
+    public DateTime Day { get; init; }
+    public int ReviewCount { get; init; }
+}
+
+public sealed class DashboardStats
+{
+    public int TotalItems { get; init; }
+    public int DueToday { get; init; }
+    public int CompletedToday { get; init; }
+    public int MasteredItems { get; init; }
+    public double RetentionRate { get; init; }
+    public List<SubjectCountModel> ItemsBySubject { get; init; } = new();
+    public List<SubjectCountModel> DueBySubject { get; init; } = new();
+    public List<SubjectCountModel> MasteredByCategory { get; init; } = new();
+    public List<ReviewTimelinePoint> ReviewTimeline { get; init; } = new();
+    public List<HeatmapDayModel> Heatmap { get; init; } = new();
+}
+
+public sealed class ReviewHistoryModel
+{
+    public DateTime ReviewedAt { get; init; }
+    public ReviewRating Rating { get; init; }
+    public bool WasSuccessful { get; init; }
+}
+
+public sealed class PrintableScheduleItem
+{
+    public string SubjectPath { get; init; } = string.Empty;
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public DateTime DueDate { get; init; }
+}
+
+public sealed record SefariaBookInfo(string EnglishTitle, string HebrewTitle);
+
+public sealed record TanakhBookShape(string EnglishTitle, string HebrewTitle, IReadOnlyList<int> VerseCountsByChapter);
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\SefariaApiService.cs
+========================================================================================================================
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
+
+namespace TrackerApp;
+
+internal sealed class SefariaApiService : IDisposable
+{
+    private const string BaseUrl = "https://www.sefaria.org/";
+    private static readonly TimeSpan CategoryCacheDuration = TimeSpan.FromDays(7);
+    private static readonly TimeSpan ShapeCacheDuration = TimeSpan.FromDays(30);
+    private static readonly TimeSpan ChapterCacheDuration = TimeSpan.FromDays(30);
+
+    private static readonly IReadOnlyDictionary<string, string> SectionPathMap = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["תורה"] = "Tanakh/Torah",
+        ["נביאים"] = "Tanakh/Prophets",
+        ["כתובים"] = "Tanakh/Writings"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> TanakhBookHebrewMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Genesis"] = "בראשית",
+        ["Exodus"] = "שמות",
+        ["Leviticus"] = "ויקרא",
+        ["Numbers"] = "במדבר",
+        ["Deuteronomy"] = "דברים",
+        ["Joshua"] = "יהושע",
+        ["Judges"] = "שופטים",
+        ["I Samuel"] = "שמואל א",
+        ["II Samuel"] = "שמואל ב",
+        ["I Kings"] = "מלכים א",
+        ["II Kings"] = "מלכים ב",
+        ["Isaiah"] = "ישעיהו",
+        ["Jeremiah"] = "ירמיהו",
+        ["Ezekiel"] = "יחזקאל",
+        ["Hosea"] = "הושע",
+        ["Joel"] = "יואל",
+        ["Amos"] = "עמוס",
+        ["Obadiah"] = "עובדיה",
+        ["Jonah"] = "יונה",
+        ["Micah"] = "מיכה",
+        ["Nahum"] = "נחום",
+        ["Habakkuk"] = "חבקוק",
+        ["Zephaniah"] = "צפניה",
+        ["Haggai"] = "חגי",
+        ["Zechariah"] = "זכריה",
+        ["Malachi"] = "מלאכי",
+        ["Psalms"] = "תהילים",
+        ["Proverbs"] = "משלי",
+        ["Job"] = "איוב",
+        ["Song of Songs"] = "שיר השירים",
+        ["Ruth"] = "רות",
+        ["Lamentations"] = "איכה",
+        ["Ecclesiastes"] = "קהלת",
+        ["Esther"] = "אסתר",
+        ["Daniel"] = "דניאל",
+        ["Ezra"] = "עזרא",
+        ["Nehemiah"] = "נחמיה",
+        ["I Chronicles"] = "דברי הימים א",
+        ["II Chronicles"] = "דברי הימים ב"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string[]> SectionBookOrder = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["תורה"] =
+        [
+            "Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy"
+        ],
+        ["נביאים"] =
+        [
+            "Joshua", "Judges", "I Samuel", "II Samuel", "I Kings", "II Kings",
+            "Isaiah", "Jeremiah", "Ezekiel", "Hosea", "Joel", "Amos", "Obadiah",
+            "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai",
+            "Zechariah", "Malachi"
+        ],
+        ["כתובים"] =
+        [
+            "Psalms", "Proverbs", "Job", "Song of Songs", "Ruth", "Lamentations",
+            "Ecclesiastes", "Esther", "Daniel", "Ezra", "Nehemiah",
+            "I Chronicles", "II Chronicles"
+        ]
+    };
+
+    private readonly HttpClient _httpClient;
+    private readonly string _cacheDirectory;
+    private readonly Dictionary<string, IReadOnlyList<SefariaBookInfo>> _booksBySection = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TanakhBookShape> _bookShapes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _chapterVerseCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<SefariaRequestLogEntry> _requestLog = [];
+
+    public SefariaApiService(string cacheDirectory)
+    {
+        _cacheDirectory = cacheDirectory;
+        Directory.CreateDirectory(_cacheDirectory);
+
+        var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+        };
+
+        _httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri(BaseUrl, UriKind.Absolute),
+            Timeout = TimeSpan.FromSeconds(20)
+        };
+        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("TrackerApp", "1.0"));
+        _httpClient.DefaultRequestHeaders.AcceptLanguage.ParseAdd("he, en;q=0.8");
+    }
+
+    public IReadOnlyList<SefariaBookInfo> GetBooksForSection(string hebrewSectionName)
+    {
+        if (_booksBySection.TryGetValue(hebrewSectionName, out var cachedBooks))
+        {
+            return cachedBooks;
+        }
+
+        if (!SectionPathMap.TryGetValue(hebrewSectionName, out var categoryPath))
+        {
+            throw new InvalidOperationException($"קטגוריית תנ\"ך לא מוכרת: {hebrewSectionName}");
+        }
+
+        using var document = GetCachedJsonDocument(
+            $"category-{categoryPath.Replace('/', '-')}",
+            $"api/category/{categoryPath}",
+            CategoryCacheDuration);
+
+        var books = ParseBooksForSection(hebrewSectionName, document.RootElement);
+        if (books.Count == 0)
+        {
+            throw new InvalidOperationException($"לא התקבלו ספרים מ-Sefaria עבור {hebrewSectionName}.");
+        }
+
+        _booksBySection[hebrewSectionName] = books;
+        return books;
+    }
+
+    public TanakhBookShape GetBookShape(string englishBookTitle)
+    {
+        if (_bookShapes.TryGetValue(englishBookTitle, out var cachedShape))
+        {
+            return cachedShape;
+        }
+
+        using var document = GetCachedJsonDocument(
+            $"shape-{SanitizeCacheKey(englishBookTitle)}",
+            $"api/shape/{Uri.EscapeDataString(englishBookTitle)}",
+            ShapeCacheDuration);
+
+        var verseCounts = FindFirstIntegerArray(document.RootElement);
+        if (verseCounts.Count == 0)
+        {
+            throw new InvalidOperationException($"לא ניתן היה לפענח את מבנה הספר {englishBookTitle} מ-Sefaria.");
+        }
+
+        var hebrewTitle = ExtractHebrewTitle(document.RootElement)
+            ?? TanakhBookHebrewMap.GetValueOrDefault(englishBookTitle, englishBookTitle);
+
+        var shape = new TanakhBookShape(englishBookTitle, hebrewTitle, verseCounts);
+        _bookShapes[englishBookTitle] = shape;
+        return shape;
+    }
+
+    public int GetVerseCountForChapter(string englishBookTitle, int chapterNumber)
+    {
+        var chapterKey = $"{englishBookTitle}|{chapterNumber}";
+        if (_chapterVerseCounts.TryGetValue(chapterKey, out var cachedCount))
+        {
+            return cachedCount;
+        }
+
+        try
+        {
+            using var document = GetCachedJsonDocument(
+                $"chapter-{SanitizeCacheKey(englishBookTitle)}-{chapterNumber}",
+                $"api/v3/texts/{Uri.EscapeDataString($"{englishBookTitle} {chapterNumber}")}",
+                ChapterCacheDuration);
+
+            var verseCount = FindMaxStringArrayLength(document.RootElement);
+            if (verseCount > 0)
+            {
+                _chapterVerseCounts[chapterKey] = verseCount;
+                return verseCount;
+            }
+        }
+        catch
+        {
+        }
+
+        var shape = GetBookShape(englishBookTitle);
+        if (chapterNumber >= 1 && chapterNumber <= shape.VerseCountsByChapter.Count)
+        {
+            var fallbackCount = shape.VerseCountsByChapter[chapterNumber - 1];
+            _chapterVerseCounts[chapterKey] = fallbackCount;
+            return fallbackCount;
+        }
+
+        throw new InvalidOperationException($"לא ניתן היה לקבוע את מספר הפסוקים עבור {englishBookTitle} פרק {chapterNumber}.");
+    }
+
+    public IReadOnlyList<SefariaRequestLogEntry> GetRequestLog()
+    {
+        return _requestLog.ToList();
+    }
+
+    public void Dispose()
+    {
+        _httpClient.Dispose();
+    }
+
+    private JsonDocument GetCachedJsonDocument(string cacheKey, string relativeUrl, TimeSpan duration)
+    {
+        var cachePath = Path.Combine(_cacheDirectory, $"{SanitizeCacheKey(cacheKey)}.json");
+
+        if (TryReadFreshCache(cachePath, duration, out var freshDocument))
+        {
+            RecordRequest(relativeUrl, true, "cache", "cache hit");
+            return freshDocument;
+        }
+
+        try
+        {
+            var json = TryFetchJson(relativeUrl);
+            File.WriteAllText(cachePath, json);
+            return JsonDocument.Parse(json);
+        }
+        catch (Exception fetchException)
+        {
+            RecordRequest(relativeUrl, false, "network", fetchException.Message);
+            if (File.Exists(cachePath))
+            {
+                RecordRequest(relativeUrl, true, "cache", "stale cache fallback");
+                return JsonDocument.Parse(File.ReadAllText(cachePath));
+            }
+
+            throw new InvalidOperationException(
+                "לא ניתן לטעון כעת נתוני ספריא. בדקו את החיבור לרשת ונסו שוב.",
+                fetchException);
+        }
+    }
+
+    private string TryFetchJson(string relativeUrl)
+    {
+        try
+        {
+            var json = FetchWithNode(relativeUrl);
+            RecordRequest(relativeUrl, true, "node", "ok");
+            return json;
+        }
+        catch (Exception nodeException)
+        {
+            RecordRequest(relativeUrl, false, "node", nodeException.Message);
+            var json = _httpClient.GetStringAsync(relativeUrl).GetAwaiter().GetResult();
+            RecordRequest(relativeUrl, true, "httpclient", "ok");
+            return json;
+        }
+    }
+
+    private static bool TryReadFreshCache(string cachePath, TimeSpan duration, out JsonDocument document)
+    {
+        document = default!;
+        if (!File.Exists(cachePath))
+        {
+            return false;
+        }
+
+        var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath);
+        if (age > duration)
+        {
+            return false;
+        }
+
+        document = JsonDocument.Parse(File.ReadAllText(cachePath));
+        return true;
+    }
+
+    private static string FetchWithNode(string relativeUrl)
+    {
+        const string script = """
+            const https = require('https');
+            const url = process.argv[1] || process.argv[2];
+            https.get(url, { headers: { 'User-Agent': 'TrackerApp/1.0' } }, (res) => {
+              if (res.statusCode && res.statusCode >= 400) {
+                console.error(`HTTP ${res.statusCode}`);
+                process.exit(1);
+                return;
+              }
+              let data = '';
+              res.setEncoding('utf8');
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => process.stdout.write(data));
+            }).on('error', (err) => {
+              console.error(err.message);
+              process.exit(1);
+            });
+            """;
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "node",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-e");
+        startInfo.ArgumentList.Add(script);
+        startInfo.ArgumentList.Add(new Uri(new Uri(BaseUrl, UriKind.Absolute), relativeUrl).ToString());
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("לא ניתן היה להפעיל את node לצורך גישה ל-Sefaria.");
+
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(output))
+        {
+            throw new InvalidOperationException(
+                $"Sefaria fetch failed דרך node עבור {relativeUrl}: {error}".Trim());
+        }
+
+        return output;
+    }
+
+    private void RecordRequest(string endpoint, bool success, string transport, string message)
+    {
+        _requestLog.Add(new SefariaRequestLogEntry(endpoint, success, transport, message));
+        if (_requestLog.Count > 50)
+        {
+            _requestLog.RemoveAt(0);
+        }
+    }
+
+    private static IReadOnlyList<SefariaBookInfo> ParseBooksForSection(string hebrewSectionName, JsonElement root)
+    {
+        var books = new Dictionary<string, SefariaBookInfo>(StringComparer.OrdinalIgnoreCase);
+        var directChildren = FindCandidateArray(root, "contents", "children", "books");
+        if (directChildren.HasValue)
+        {
+            foreach (var entry in directChildren.Value.EnumerateArray())
+            {
+                TryAddBook(entry, books);
+            }
+        }
+
+        if (SectionBookOrder.TryGetValue(hebrewSectionName, out var orderedEnglishTitles))
+        {
+            return orderedEnglishTitles
+                .Where(books.ContainsKey)
+                .Select(title => books[title])
+                .ToArray();
+        }
+
+        return books.Values.OrderBy(book => book.HebrewTitle, StringComparer.CurrentCulture).ToArray();
+    }
+
+    private static void TryAddBook(JsonElement entry, IDictionary<string, SefariaBookInfo> target)
+    {
+        var englishTitle = ExtractEnglishTitle(entry);
+        if (string.IsNullOrWhiteSpace(englishTitle))
+        {
+            return;
+        }
+
+        var hebrewTitle = ExtractHebrewTitle(entry)
+            ?? TanakhBookHebrewMap.GetValueOrDefault(englishTitle, englishTitle);
+
+        target[englishTitle] = new SefariaBookInfo(englishTitle, hebrewTitle);
+    }
+
+    private static JsonElement? FindCandidateArray(JsonElement element, params string[] propertyNames)
+    {
+        foreach (var propertyName in propertyNames)
+        {
+            if (TryGetPropertyIgnoreCase(element, propertyName, out var property) &&
+                property.ValueKind == JsonValueKind.Array)
+            {
+                return property;
+            }
+        }
+
+        return null;
+    }
+
+    private static IReadOnlyList<int> FindFirstIntegerArray(JsonElement element)
+    {
+        foreach (var propertyName in new[] { "lengths", "chapter_lengths", "chapterLengths", "sectionLengths" })
+        {
+            if (TryGetPropertyIgnoreCase(element, propertyName, out var property) &&
+                TryReadIntegerArray(property, out var values))
+            {
+                return values;
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                var nested = FindFirstIntegerArray(property.Value);
+                if (nested.Count > 0)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                var nested = FindFirstIntegerArray(child);
+                if (nested.Count > 0)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return [];
+    }
+
+    private static bool TryReadIntegerArray(JsonElement element, out IReadOnlyList<int> values)
+    {
+        values = [];
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var numbers = new List<int>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var number))
+            {
+                return false;
+            }
+
+            numbers.Add(number);
+        }
+
+        values = numbers;
+        return numbers.Count > 0;
+    }
+
+    private static int FindMaxStringArrayLength(JsonElement element)
+    {
+        var maxLength = 0;
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            if (element.GetArrayLength() > 0 && element.EnumerateArray().All(item => item.ValueKind == JsonValueKind.String))
+            {
+                return element.GetArrayLength();
+            }
+
+            foreach (var child in element.EnumerateArray())
+            {
+                maxLength = Math.Max(maxLength, FindMaxStringArrayLength(child));
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                maxLength = Math.Max(maxLength, FindMaxStringArrayLength(property.Value));
+            }
+        }
+
+        return maxLength;
+    }
+
+    private static string? ExtractEnglishTitle(JsonElement element)
+    {
+        foreach (var propertyName in new[] { "title", "enTitle", "indexTitle", "book" })
+        {
+            if (TryGetStringIgnoreCase(element, propertyName, out var value) && TanakhBookHebrewMap.ContainsKey(value))
+            {
+                return value;
+            }
+        }
+
+        if (TryGetPropertyIgnoreCase(element, "titles", out var titles) &&
+            titles.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var title in titles.EnumerateArray())
+            {
+                if (TryGetStringIgnoreCase(title, "lang", out var lang) &&
+                    lang.Equals("en", StringComparison.OrdinalIgnoreCase) &&
+                    TryGetStringIgnoreCase(title, "text", out var text) &&
+                    TanakhBookHebrewMap.ContainsKey(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractHebrewTitle(JsonElement element)
+    {
+        foreach (var propertyName in new[] { "heTitle", "he", "heIndexTitle" })
+        {
+            if (TryGetStringIgnoreCase(element, propertyName, out var value))
+            {
+                return value;
+            }
+        }
+
+        if (TryGetPropertyIgnoreCase(element, "titles", out var titles) &&
+            titles.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var title in titles.EnumerateArray())
+            {
+                if (TryGetStringIgnoreCase(title, "lang", out var lang) &&
+                    lang.Equals("he", StringComparison.OrdinalIgnoreCase) &&
+                    TryGetStringIgnoreCase(title, "text", out var text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals(propertyName) || property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool TryGetStringIgnoreCase(JsonElement element, string propertyName, out string value)
+    {
+        if (TryGetPropertyIgnoreCase(element, propertyName, out var property) &&
+            property.ValueKind == JsonValueKind.String)
+        {
+            value = property.GetString() ?? string.Empty;
+            return !string.IsNullOrWhiteSpace(value);
+        }
+
+        value = string.Empty;
+        return false;
+    }
+
+    private static string SanitizeCacheKey(string key)
+    {
+        var invalidChars = Path.GetInvalidFileNameChars();
+        var sanitized = new string(key.Select(ch => invalidChars.Contains(ch) ? '_' : ch).ToArray());
+        return sanitized.Replace(' ', '_');
+    }
+}
+
+public sealed record SefariaRequestLogEntry(string Endpoint, bool Success, string Transport, string Message);
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\SefariaTanakhService.cs
+========================================================================================================================
+using System.Diagnostics;
+using System.Net;
+using System.Net.Http.Headers;
+using System.Text.Json;
+
+namespace TrackerApp;
+
+internal sealed class SefariaTanakhService : IDisposable
+{
+    private const string BaseUrl = "https://www.sefaria.org/";
+    private static readonly TimeSpan TocCacheDuration = TimeSpan.FromDays(7);
+    private static readonly TimeSpan ShapeCacheDuration = TimeSpan.FromDays(30);
+    private static readonly TimeSpan ChapterCacheDuration = TimeSpan.FromDays(30);
+
+    private static readonly IReadOnlyDictionary<string, string> SectionKeyMap = new Dictionary<string, string>(StringComparer.Ordinal)
+    {
+        ["תורה"] = "Torah",
+        ["נביאים"] = "Prophets",
+        ["כתובים"] = "Writings"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string> TanakhBookHebrewMap = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase)
+    {
+        ["Genesis"] = "בראשית",
+        ["Exodus"] = "שמות",
+        ["Leviticus"] = "ויקרא",
+        ["Numbers"] = "במדבר",
+        ["Deuteronomy"] = "דברים",
+        ["Joshua"] = "יהושע",
+        ["Judges"] = "שופטים",
+        ["I Samuel"] = "שמואל א",
+        ["II Samuel"] = "שמואל ב",
+        ["I Kings"] = "מלכים א",
+        ["II Kings"] = "מלכים ב",
+        ["Isaiah"] = "ישעיהו",
+        ["Jeremiah"] = "ירמיהו",
+        ["Ezekiel"] = "יחזקאל",
+        ["Hosea"] = "הושע",
+        ["Joel"] = "יואל",
+        ["Amos"] = "עמוס",
+        ["Obadiah"] = "עובדיה",
+        ["Jonah"] = "יונה",
+        ["Micah"] = "מיכה",
+        ["Nahum"] = "נחום",
+        ["Habakkuk"] = "חבקוק",
+        ["Zephaniah"] = "צפניה",
+        ["Haggai"] = "חגי",
+        ["Zechariah"] = "זכריה",
+        ["Malachi"] = "מלאכי",
+        ["Psalms"] = "תהילים",
+        ["Proverbs"] = "משלי",
+        ["Job"] = "איוב",
+        ["Song of Songs"] = "שיר השירים",
+        ["Ruth"] = "רות",
+        ["Lamentations"] = "איכה",
+        ["Ecclesiastes"] = "קהלת",
+        ["Esther"] = "אסתר",
+        ["Daniel"] = "דניאל",
+        ["Ezra"] = "עזרא",
+        ["Nehemiah"] = "נחמיה",
+        ["I Chronicles"] = "דברי הימים א",
+        ["II Chronicles"] = "דברי הימים ב"
+    };
+
+    private static readonly IReadOnlyDictionary<string, string[]> SectionBookOrder = new Dictionary<string, string[]>(StringComparer.Ordinal)
+    {
+        ["תורה"] = ["Genesis", "Exodus", "Leviticus", "Numbers", "Deuteronomy"],
+        ["נביאים"] =
+        [
+            "Joshua", "Judges", "I Samuel", "II Samuel", "I Kings", "II Kings",
+            "Isaiah", "Jeremiah", "Ezekiel", "Hosea", "Joel", "Amos", "Obadiah",
+            "Jonah", "Micah", "Nahum", "Habakkuk", "Zephaniah", "Haggai",
+            "Zechariah", "Malachi"
+        ],
+        ["כתובים"] =
+        [
+            "Psalms", "Proverbs", "Job", "Song of Songs", "Ruth", "Lamentations",
+            "Ecclesiastes", "Esther", "Daniel", "Ezra", "Nehemiah",
+            "I Chronicles", "II Chronicles"
+        ]
+    };
+
+    private readonly HttpClient _httpClient;
+    private readonly string _cacheDirectory;
+    private readonly Dictionary<string, IReadOnlyList<SefariaBookInfo>> _booksBySection = new(StringComparer.Ordinal);
+    private readonly Dictionary<string, TanakhBookShape> _bookShapes = new(StringComparer.OrdinalIgnoreCase);
+    private readonly Dictionary<string, int> _chapterVerseCounts = new(StringComparer.OrdinalIgnoreCase);
+    private readonly List<SefariaRequestLogEntry> _requestLog = [];
+
+    public SefariaTanakhService(string cacheDirectory)
+    {
+        _cacheDirectory = cacheDirectory;
+        Directory.CreateDirectory(_cacheDirectory);
+
+        var handler = new HttpClientHandler
+        {
+            AutomaticDecompression = DecompressionMethods.GZip | DecompressionMethods.Deflate
+        };
+
+        _httpClient = new HttpClient(handler)
+        {
+            BaseAddress = new Uri(BaseUrl, UriKind.Absolute),
+            Timeout = TimeSpan.FromSeconds(20)
+        };
+        _httpClient.DefaultRequestHeaders.UserAgent.Add(new ProductInfoHeaderValue("TrackerApp", "1.0"));
+        _httpClient.DefaultRequestHeaders.AcceptLanguage.ParseAdd("he, en;q=0.8");
+    }
+
+    public IReadOnlyList<SefariaBookInfo> GetBooksForSection(string hebrewSectionName)
+    {
+        if (_booksBySection.TryGetValue(hebrewSectionName, out var cachedBooks))
+        {
+            return cachedBooks;
+        }
+
+        if (!SectionKeyMap.TryGetValue(hebrewSectionName, out var englishSectionName))
+        {
+            throw new InvalidOperationException($"קטגוריית תנ\"ך לא מוכרת: {hebrewSectionName}");
+        }
+
+        using var document = GetCachedJsonDocument("toc-index", "api/index", TocCacheDuration);
+        var books = ParseBooksForSection(document.RootElement, englishSectionName, hebrewSectionName);
+        if (books.Count == 0)
+        {
+            throw new InvalidOperationException($"לא התקבלו ספרים מ-Sefaria עבור {hebrewSectionName}.");
+        }
+
+        _booksBySection[hebrewSectionName] = books;
+        return books;
+    }
+
+    public TanakhBookShape GetBookShape(string englishBookTitle)
+    {
+        if (_bookShapes.TryGetValue(englishBookTitle, out var cachedShape))
+        {
+            return cachedShape;
+        }
+
+        using var document = GetCachedJsonDocument(
+            $"shape-{SanitizeCacheKey(englishBookTitle)}",
+            $"api/shape/{Uri.EscapeDataString(englishBookTitle)}",
+            ShapeCacheDuration);
+
+        var verseCounts = FindFirstIntegerArray(document.RootElement);
+        if (verseCounts.Count == 0)
+        {
+            throw new InvalidOperationException($"לא ניתן היה לפענח את מבנה הספר {englishBookTitle} מ-Sefaria.");
+        }
+
+        var hebrewTitle = ExtractHebrewTitle(document.RootElement)
+            ?? TanakhBookHebrewMap.GetValueOrDefault(englishBookTitle, englishBookTitle);
+
+        var shape = new TanakhBookShape(englishBookTitle, hebrewTitle, verseCounts);
+        _bookShapes[englishBookTitle] = shape;
+        return shape;
+    }
+
+    public int GetVerseCountForChapter(string englishBookTitle, int chapterNumber)
+    {
+        var chapterKey = $"{englishBookTitle}|{chapterNumber}";
+        if (_chapterVerseCounts.TryGetValue(chapterKey, out var cachedCount))
+        {
+            return cachedCount;
+        }
+
+        try
+        {
+            using var document = GetCachedJsonDocument(
+                $"chapter-{SanitizeCacheKey(englishBookTitle)}-{chapterNumber}",
+                $"api/v3/texts/{Uri.EscapeDataString($"{englishBookTitle} {chapterNumber}")}",
+                ChapterCacheDuration);
+
+            var verseCount = FindMaxStringArrayLength(document.RootElement);
+            if (verseCount > 0)
+            {
+                _chapterVerseCounts[chapterKey] = verseCount;
+                return verseCount;
+            }
+        }
+        catch
+        {
+        }
+
+        var shape = GetBookShape(englishBookTitle);
+        if (chapterNumber >= 1 && chapterNumber <= shape.VerseCountsByChapter.Count)
+        {
+            var fallbackCount = shape.VerseCountsByChapter[chapterNumber - 1];
+            _chapterVerseCounts[chapterKey] = fallbackCount;
+            return fallbackCount;
+        }
+
+        throw new InvalidOperationException($"לא ניתן היה לקבוע את מספר הפסוקים עבור {englishBookTitle} פרק {chapterNumber}.");
+    }
+
+    public IReadOnlyList<SefariaRequestLogEntry> GetRequestLog()
+    {
+        return _requestLog.ToList();
+    }
+
+    public void Dispose()
+    {
+        _httpClient.Dispose();
+    }
+
+    private JsonDocument GetCachedJsonDocument(string cacheKey, string relativeUrl, TimeSpan duration)
+    {
+        var cachePath = Path.Combine(_cacheDirectory, $"{SanitizeCacheKey(cacheKey)}.json");
+
+        if (TryReadFreshCache(cachePath, duration, out var freshDocument))
+        {
+            RecordRequest(relativeUrl, true, "cache", "cache hit");
+            return freshDocument;
+        }
+
+        try
+        {
+            var json = TryFetchJson(relativeUrl);
+            File.WriteAllText(cachePath, json);
+            return JsonDocument.Parse(json);
+        }
+        catch (Exception fetchException)
+        {
+            RecordRequest(relativeUrl, false, "network", fetchException.Message);
+            if (File.Exists(cachePath))
+            {
+                RecordRequest(relativeUrl, true, "cache", "stale cache fallback");
+                return JsonDocument.Parse(File.ReadAllText(cachePath));
+            }
+
+            throw new InvalidOperationException(
+                "לא ניתן לטעון כעת נתוני ספריא. בדקו את החיבור לרשת ונסו שוב.",
+                fetchException);
+        }
+    }
+
+    private string TryFetchJson(string relativeUrl)
+    {
+        try
+        {
+            var json = FetchWithNode(relativeUrl);
+            RecordRequest(relativeUrl, true, "node", "ok");
+            return json;
+        }
+        catch (Exception nodeException)
+        {
+            RecordRequest(relativeUrl, false, "node", nodeException.Message);
+            var json = _httpClient.GetStringAsync(relativeUrl).GetAwaiter().GetResult();
+            RecordRequest(relativeUrl, true, "httpclient", "ok");
+            return json;
+        }
+    }
+
+    private static bool TryReadFreshCache(string cachePath, TimeSpan duration, out JsonDocument document)
+    {
+        document = default!;
+        if (!File.Exists(cachePath))
+        {
+            return false;
+        }
+
+        var age = DateTime.UtcNow - File.GetLastWriteTimeUtc(cachePath);
+        if (age > duration)
+        {
+            return false;
+        }
+
+        document = JsonDocument.Parse(File.ReadAllText(cachePath));
+        return true;
+    }
+
+    private static string FetchWithNode(string relativeUrl)
+    {
+        const string script = """
+            const https = require('https');
+            const url = process.argv[1] || process.argv[2];
+            https.get(url, { headers: { 'User-Agent': 'TrackerApp/1.0' } }, (res) => {
+              if (res.statusCode && res.statusCode >= 400) {
+                console.error(`HTTP ${res.statusCode}`);
+                process.exit(1);
+                return;
+              }
+              let data = '';
+              res.setEncoding('utf8');
+              res.on('data', chunk => data += chunk);
+              res.on('end', () => process.stdout.write(data));
+            }).on('error', (err) => {
+              console.error(err.message);
+              process.exit(1);
+            });
+            """;
+
+        var startInfo = new ProcessStartInfo
+        {
+            FileName = "node",
+            RedirectStandardOutput = true,
+            RedirectStandardError = true,
+            UseShellExecute = false,
+            CreateNoWindow = true
+        };
+        startInfo.ArgumentList.Add("-e");
+        startInfo.ArgumentList.Add(script);
+        startInfo.ArgumentList.Add(new Uri(new Uri(BaseUrl, UriKind.Absolute), relativeUrl).ToString());
+
+        using var process = Process.Start(startInfo)
+            ?? throw new InvalidOperationException("לא ניתן היה להפעיל את node לצורך גישה ל-Sefaria.");
+
+        var output = process.StandardOutput.ReadToEnd();
+        var error = process.StandardError.ReadToEnd();
+        process.WaitForExit();
+
+        if (process.ExitCode != 0 || string.IsNullOrWhiteSpace(output))
+        {
+            throw new InvalidOperationException(
+                $"Sefaria fetch failed דרך node עבור {relativeUrl}: {error}".Trim());
+        }
+
+        return output;
+    }
+
+    private void RecordRequest(string endpoint, bool success, string transport, string message)
+    {
+        _requestLog.Add(new SefariaRequestLogEntry(endpoint, success, transport, message));
+        if (_requestLog.Count > 100)
+        {
+            _requestLog.RemoveAt(0);
+        }
+    }
+
+    private static IReadOnlyList<SefariaBookInfo> ParseBooksForSection(
+        JsonElement root,
+        string englishSectionName,
+        string hebrewSectionName)
+    {
+        var books = new Dictionary<string, SefariaBookInfo>(StringComparer.OrdinalIgnoreCase);
+        CollectBooksFromToc(root, englishSectionName, books);
+
+        if (SectionBookOrder.TryGetValue(hebrewSectionName, out var orderedEnglishTitles))
+        {
+            return orderedEnglishTitles
+                .Where(books.ContainsKey)
+                .Select(title => books[title])
+                .ToArray();
+        }
+
+        return books.Values.OrderBy(book => book.HebrewTitle, StringComparer.CurrentCulture).ToArray();
+    }
+
+    private static void CollectBooksFromToc(
+        JsonElement element,
+        string englishSectionName,
+        IDictionary<string, SefariaBookInfo> target)
+    {
+        switch (element.ValueKind)
+        {
+            case JsonValueKind.Object:
+                if (TryGetPropertyIgnoreCase(element, "categories", out var categories) &&
+                    categories.ValueKind == JsonValueKind.Array)
+                {
+                    var values = categories.EnumerateArray()
+                        .Where(item => item.ValueKind == JsonValueKind.String)
+                        .Select(item => item.GetString() ?? string.Empty)
+                        .Where(value => !string.IsNullOrWhiteSpace(value))
+                        .ToArray();
+
+                    if (values.Length >= 2 &&
+                        values[0].Equals("Tanakh", StringComparison.OrdinalIgnoreCase) &&
+                        values[1].Equals(englishSectionName, StringComparison.OrdinalIgnoreCase))
+                    {
+                        TryAddBook(element, target);
+                    }
+                }
+
+                foreach (var property in element.EnumerateObject())
+                {
+                    CollectBooksFromToc(property.Value, englishSectionName, target);
+                }
+
+                break;
+
+            case JsonValueKind.Array:
+                foreach (var child in element.EnumerateArray())
+                {
+                    CollectBooksFromToc(child, englishSectionName, target);
+                }
+
+                break;
+        }
+    }
+
+    private static void TryAddBook(JsonElement entry, IDictionary<string, SefariaBookInfo> target)
+    {
+        var englishTitle = ExtractEnglishTitle(entry);
+        if (string.IsNullOrWhiteSpace(englishTitle))
+        {
+            return;
+        }
+
+        var hebrewTitle = ExtractHebrewTitle(entry)
+            ?? TanakhBookHebrewMap.GetValueOrDefault(englishTitle, englishTitle);
+
+        target[englishTitle] = new SefariaBookInfo(englishTitle, hebrewTitle);
+    }
+
+    private static IReadOnlyList<int> FindFirstIntegerArray(JsonElement element)
+    {
+        foreach (var propertyName in new[] { "lengths", "chapter_lengths", "chapterLengths", "sectionLengths", "chapters" })
+        {
+            if (TryGetPropertyIgnoreCase(element, propertyName, out var property) &&
+                TryReadIntegerArray(property, out var values))
+            {
+                return values;
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                var nested = FindFirstIntegerArray(property.Value);
+                if (nested.Count > 0)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var child in element.EnumerateArray())
+            {
+                var nested = FindFirstIntegerArray(child);
+                if (nested.Count > 0)
+                {
+                    return nested;
+                }
+            }
+        }
+
+        return [];
+    }
+
+    private static bool TryReadIntegerArray(JsonElement element, out IReadOnlyList<int> values)
+    {
+        values = [];
+        if (element.ValueKind != JsonValueKind.Array)
+        {
+            return false;
+        }
+
+        var numbers = new List<int>();
+        foreach (var item in element.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Number || !item.TryGetInt32(out var number))
+            {
+                return false;
+            }
+
+            numbers.Add(number);
+        }
+
+        values = numbers;
+        return numbers.Count > 0;
+    }
+
+    private static int FindMaxStringArrayLength(JsonElement element)
+    {
+        var maxLength = 0;
+        if (element.ValueKind == JsonValueKind.Array)
+        {
+            if (element.GetArrayLength() > 0 && element.EnumerateArray().All(item => item.ValueKind == JsonValueKind.String))
+            {
+                return element.GetArrayLength();
+            }
+
+            foreach (var child in element.EnumerateArray())
+            {
+                maxLength = Math.Max(maxLength, FindMaxStringArrayLength(child));
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                maxLength = Math.Max(maxLength, FindMaxStringArrayLength(property.Value));
+            }
+        }
+
+        return maxLength;
+    }
+
+    private static string? ExtractEnglishTitle(JsonElement element)
+    {
+        foreach (var propertyName in new[] { "title", "enTitle", "indexTitle", "book" })
+        {
+            if (TryGetStringIgnoreCase(element, propertyName, out var value) && TanakhBookHebrewMap.ContainsKey(value))
+            {
+                return value;
+            }
+        }
+
+        if (TryGetPropertyIgnoreCase(element, "titles", out var titles) &&
+            titles.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var title in titles.EnumerateArray())
+            {
+                if (TryGetStringIgnoreCase(title, "lang", out var lang) &&
+                    lang.Equals("en", StringComparison.OrdinalIgnoreCase) &&
+                    TryGetStringIgnoreCase(title, "text", out var text) &&
+                    TanakhBookHebrewMap.ContainsKey(text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static string? ExtractHebrewTitle(JsonElement element)
+    {
+        foreach (var propertyName in new[] { "heTitle", "he", "heIndexTitle" })
+        {
+            if (TryGetStringIgnoreCase(element, propertyName, out var value))
+            {
+                return value;
+            }
+        }
+
+        if (TryGetPropertyIgnoreCase(element, "titles", out var titles) &&
+            titles.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var title in titles.EnumerateArray())
+            {
+                if (TryGetStringIgnoreCase(title, "lang", out var lang) &&
+                    lang.Equals("he", StringComparison.OrdinalIgnoreCase) &&
+                    TryGetStringIgnoreCase(title, "text", out var text))
+                {
+                    return text;
+                }
+            }
+        }
+
+        return null;
+    }
+
+    private static bool TryGetPropertyIgnoreCase(JsonElement element, string propertyName, out JsonElement value)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.NameEquals(propertyName) || property.Name.Equals(propertyName, StringComparison.OrdinalIgnoreCase))
+                {
+                    value = property.Value;
+                    return true;
+                }
+            }
+        }
+
+        value = default;
+        return false;
+    }
+
+    private static bool TryGetStringIgnoreCase(JsonElement element, string propertyName, out string value)
+    {
+        value = string.Empty;
+        if (!TryGetPropertyIgnoreCase(element, propertyName, out var property) || property.ValueKind != JsonValueKind.String)
+        {
+            return false;
+        }
+
+        value = property.GetString() ?? string.Empty;
+        return !string.IsNullOrWhiteSpace(value);
+    }
+
+    private static string SanitizeCacheKey(string value)
+    {
+        foreach (var invalidChar in Path.GetInvalidFileNameChars())
+        {
+            value = value.Replace(invalidChar, '_');
+        }
+
+        return value.Replace(' ', '_');
+    }
+}
+
+

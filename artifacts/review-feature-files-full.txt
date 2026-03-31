@@ -1,0 +1,3035 @@
+﻿========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\MainForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class MainForm : Form
+{
+    private const string DummyNodeText = "...";
+
+    private readonly AppDatabase _database;
+    private readonly TreeView _subjectTreeView = new();
+    private readonly FlowLayoutPanel _cardPanel = new();
+    private readonly StatusViewControl _statusView = new();
+    private readonly SearchFilterControl _searchFilterView = new();
+    private readonly ReviewFilterControl _reviewFilterView = new();
+    private readonly ReviewSessionControl _reviewSessionView = new();
+    private readonly TagsManagerControl _tagsManagerView = new();
+    private readonly Panel _cardsWorkspace = new();
+    private readonly FlowLayoutPanel _bulkActionBar = new();
+    private readonly Label _contentTitleLabel = new();
+    private readonly ToolStripStatusLabel _statusLabel = new();
+    private readonly ToolStripMenuItem _questionsTabItem = new();
+    private readonly ToolStripMenuItem _tagsTabItem = new();
+    private readonly ToolStripMenuItem _searchTabItem = new();
+    private readonly ToolStripMenuItem _reviewTabItem = new();
+    private readonly ToolStripMenuItem _statusTabItem = new();
+    private readonly TanakhVerificationRequest? _verificationRequest;
+    private readonly CoreVerificationRequest? _coreVerificationRequest;
+    private readonly ManagementVerificationRequest? _managementVerificationRequest;
+    private readonly ReviewVerificationRequest? _reviewVerificationRequest;
+
+    private int? _selectedSubjectId;
+    private bool _verificationStarted;
+    private MainWorkspaceMode _currentWorkspace = MainWorkspaceMode.Questions;
+    private MainWorkspaceMode _reviewSessionReturnMode = MainWorkspaceMode.Review;
+    private List<StudyItemModel> _reviewSessionItems = [];
+    private List<int> _reviewFailedItemIds = [];
+    private int _reviewSessionIndex;
+    private int _reviewSessionCompletedCount;
+    private int _reviewSessionFailedCount;
+    private int _reviewSessionHighRatingCount;
+    private int _reviewSessionLowRatingCount;
+    private string _reviewSessionTitle = string.Empty;
+
+    public MainForm(AppDatabase database, TanakhVerificationRequest? verificationRequest = null, CoreVerificationRequest? coreVerificationRequest = null, ManagementVerificationRequest? managementVerificationRequest = null, ReviewVerificationRequest? reviewVerificationRequest = null)
+    {
+        _database = database;
+        _verificationRequest = verificationRequest;
+        _coreVerificationRequest = coreVerificationRequest;
+        _managementVerificationRequest = managementVerificationRequest;
+        _reviewVerificationRequest = reviewVerificationRequest;
+
+        Text = "×ž×¢×¨×›×ª ×—×–×¨×•×ª";
+        StartPosition = FormStartPosition.CenterScreen;
+        MinimumSize = new Size(1280, 820);
+        Size = new Size(1500, 940);
+        BackColor = ClassicPalette.WindowBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+        KeyPreview = true;
+
+        BuildLayout();
+        WireEvents();
+        Load += (_, _) => InitializeScreen();
+    }
+
+    protected override bool ProcessCmdKey(ref Message msg, Keys keyData)
+    {
+        if (_reviewSessionView.Visible && _reviewSessionView.HandleShortcut(keyData))
+        {
+            return true;
+        }
+
+        return base.ProcessCmdKey(ref msg, keyData);
+    }
+
+    private void BuildLayout()
+    {
+        SuspendLayout();
+        Controls.Add(CreateMainArea());
+        Controls.Add(CreateTopChrome());
+        Controls.Add(CreateStatusStrip());
+        ResumeLayout(true);
+    }
+
+    private void WireEvents()
+    {
+        _subjectTreeView.BeforeExpand += (_, e) => HandleTreeBeforeExpand(e);
+        _subjectTreeView.AfterSelect += (_, _) => HandleTreeSelection();
+
+        _searchFilterView.SearchRequested += (_, _) => RunSearch();
+        _searchFilterView.ClearRequested += (_, _) =>
+        {
+            PopulateCards(Array.Empty<StudyItemModel>());
+            _searchFilterView.SetResultSummary("××™×Ÿ ×ª×•×¦××•×ª ×ž×•×¦×’×•×ª.");
+            _statusLabel.Text = "×”×—×™×¤×•×© ××•×¤×¡.";
+        };
+
+        _reviewFilterView.ReviewRequested += (_, _) => StartFilteredReviewSession();
+        _reviewFilterView.ResetRequested += (_, _) => RunReview();
+
+        _reviewSessionView.RevealAnswerRequested += (_, _) => _reviewSessionView.RevealAnswer();
+        _reviewSessionView.RatingRequested += (_, rating) => HandleReviewSessionRating(rating);
+        _reviewSessionView.RetryFailedRequested += (_, _) => RetryFailedReviewSession();
+        _reviewSessionView.CloseRequested += (_, _) => ExitReviewSession();
+        _reviewSessionView.AbortRequested += (_, _) => CompleteReviewSession();
+
+        _tagsManagerView.AddTagRequested += (_, _) => CreateTag();
+        _tagsManagerView.EditTagRequested += (_, tag) => EditTag(tag);
+        _tagsManagerView.DeleteTagRequested += (_, tag) => DeleteTag(tag);
+        _tagsManagerView.FilterByTagRequested += (_, tag) => FilterByTag(tag);
+
+        _cardPanel.SizeChanged += (_, _) => ResizeCards();
+    }
+
+    private Control CreateTopChrome()
+    {
+        var host = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 106,
+            AutoSize = false,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = ClassicPalette.ToolbarBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        host.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
+        host.RowStyles.Add(new RowStyle(SizeType.Absolute, 48F));
+
+        ApplyMirroredRtlWhenAvailable(host);
+        host.Controls.Add(CreateTabsBar(), 0, 0);
+        host.Controls.Add(CreateFormattingToolbar(), 0, 1);
+        return host;
+    }
+
+    private Control CreateTabsBar()
+    {
+        var menu = new MenuStrip
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = 58,
+            Stretch = true,
+            RenderMode = ToolStripRenderMode.System,
+            GripStyle = ToolStripGripStyle.Hidden,
+            BackColor = ClassicPalette.ToolbarBackground,
+            ForeColor = Color.White,
+            Padding = new Padding(8, 12, 8, 10),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(menu);
+        menu.Items.AddRange(
+        [
+            CreateTopTab(_questionsTabItem, "×©××œ×•×ª", (_, _) => ShowStudyCards()),
+            CreateTopTab(_tagsTabItem, "×ª×’×™×•×ª", (_, _) => ShowTagsView()),
+            CreateTopTab(_searchTabItem, "×—×™×¤×•×©", (_, _) => ShowSearchView()),
+            CreateTopTab(_reviewTabItem, "×—×–×¨×” ×™×•×ž×™×ª", (_, _) => ShowReviewView()),
+            CreateTopTab(_statusTabItem, "×ž×¦×‘", (_, _) => ShowStatusView()),
+            CreateTopTab(new ToolStripMenuItem(), "×’×™×‘×•×™", (_, _) => BackupDatabase()),
+            CreateTopTab(new ToolStripMenuItem(), "×”×’×“×¨×•×ª", (_, _) => ShowPlaceholder("×”×’×“×¨×•×ª")),
+            CreateTopTab(new ToolStripMenuItem(), "×¢×–×¨×”", (_, _) => ShowHelp()),
+            CreateTopTab(new ToolStripMenuItem(), "××•×“×•×ª", (_, _) => ShowAbout())
+        ]);
+
+        return menu;
+    }
+
+    private Control CreateFormattingToolbar()
+    {
+        var toolbar = new ToolStrip
+        {
+            Dock = DockStyle.Fill,
+            AutoSize = false,
+            Height = 48,
+            Stretch = true,
+            GripStyle = ToolStripGripStyle.Hidden,
+            RenderMode = ToolStripRenderMode.System,
+            BackColor = Color.FromArgb(127, 191, 184),
+            Padding = new Padding(8, 8, 8, 8),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes,
+            LayoutStyle = ToolStripLayoutStyle.HorizontalStackWithOverflow,
+            CanOverflow = false
+        };
+
+        ApplyMirroredRtlWhenAvailable(toolbar);
+        toolbar.Items.Add(CreateFormatCombo());
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("×™×ž×™×Ÿ"));
+        toolbar.Items.Add(CreateFormatButton("×ž×¨×›×–"));
+        toolbar.Items.Add(CreateFormatButton("×©×ž××œ"));
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("U", new Font("Microsoft Sans Serif", 9F, FontStyle.Bold | FontStyle.Underline)));
+        toolbar.Items.Add(CreateFormatButton("I", new Font("Times New Roman", 10F, FontStyle.Bold | FontStyle.Italic)));
+        toolbar.Items.Add(CreateFormatButton("B", new Font("Microsoft Sans Serif", 10F, FontStyle.Bold)));
+        toolbar.Items.Add(CreateToolStripSeparator());
+        toolbar.Items.Add(CreateFormatButton("16"));
+        toolbar.Items.Add(CreateFormatButton("14"));
+        toolbar.Items.Add(CreateFormatButton("12"));
+        return toolbar;
+    }
+
+    private Control CreateMainArea()
+    {
+        var container = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.PanelBackground,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(container);
+        container.Controls.Add(CreateContentPanel());
+        container.Controls.Add(CreateTreePanel());
+        return container;
+    }
+
+    private Control CreateTreePanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Right,
+            Width = 330,
+            BackColor = ClassicPalette.PanelBackground,
+            Padding = new Padding(6),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(panel);
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×¡×¤×¨×™×™×”",
+            Font = new Font(Font, FontStyle.Bold),
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _subjectTreeView.Dock = DockStyle.Fill;
+        _subjectTreeView.BorderStyle = BorderStyle.FixedSingle;
+        _subjectTreeView.HideSelection = false;
+        _subjectTreeView.BackColor = Color.White;
+        _subjectTreeView.RightToLeft = RightToLeft.Yes;
+
+        panel.Controls.Add(_subjectTreeView);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private Control CreateContentPanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.PanelBackground,
+            Padding = new Padding(6),
+            Margin = Padding.Empty,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        ApplyMirroredRtlWhenAvailable(panel);
+
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Top,
+            Height = 36,
+            BackColor = ClassicPalette.Teal,
+            BorderStyle = BorderStyle.FixedSingle,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var headerActions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Left,
+            Width = 468,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            BackColor = Color.Transparent,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        headerActions.Controls.Add(CreateHeaderActionButton("×”×“×¤×¡×”", (_, _) => ExportPrintRange()));
+        headerActions.Controls.Add(CreateHeaderActionButton("×™×™×¦×•× CSV", (_, _) => ExportCsv()));
+        headerActions.Controls.Add(CreateHeaderActionButton("×™×™×‘×•× CSV", (_, _) => ImportCsv()));
+        headerActions.Controls.Add(CreateHeaderActionButton("×›×¨×˜×™×¡ ×—×“×©", (_, _) => OpenAddDialog()));
+
+        _contentTitleLabel.Dock = DockStyle.Fill;
+        _contentTitleLabel.Font = new Font(Font, FontStyle.Bold);
+        _contentTitleLabel.ForeColor = Color.White;
+        _contentTitleLabel.TextAlign = ContentAlignment.MiddleRight;
+        _contentTitleLabel.RightToLeft = RightToLeft.Yes;
+
+        headerPanel.Controls.Add(headerActions);
+        headerPanel.Controls.Add(_contentTitleLabel);
+
+        _cardPanel.Dock = DockStyle.Fill;
+        _cardPanel.AutoScroll = true;
+        _cardPanel.FlowDirection = FlowDirection.TopDown;
+        _cardPanel.WrapContents = false;
+        _cardPanel.BackColor = ClassicPalette.PanelBackground;
+        _cardPanel.RightToLeft = RightToLeft.Yes;
+
+        BuildBulkActionBar();
+
+        _cardsWorkspace.Dock = DockStyle.Fill;
+        _cardsWorkspace.BackColor = ClassicPalette.PanelBackground;
+        _reviewSessionView.Visible = false;
+        _cardsWorkspace.Controls.Add(_cardPanel);
+        _cardsWorkspace.Controls.Add(_reviewSessionView);
+        _cardsWorkspace.Controls.Add(_bulkActionBar);
+        _cardsWorkspace.Controls.Add(_reviewFilterView);
+        _cardsWorkspace.Controls.Add(_searchFilterView);
+
+        _searchFilterView.Visible = false;
+        _reviewFilterView.Visible = false;
+
+        _statusView.Dock = DockStyle.Fill;
+        _statusView.Visible = false;
+
+        _tagsManagerView.Dock = DockStyle.Fill;
+        _tagsManagerView.Visible = false;
+
+        panel.Controls.Add(_cardsWorkspace);
+        panel.Controls.Add(_statusView);
+        panel.Controls.Add(_tagsManagerView);
+        panel.Controls.Add(headerPanel);
+        return panel;
+    }
+
+    private void BuildBulkActionBar()
+    {
+        _bulkActionBar.Dock = DockStyle.Top;
+        _bulkActionBar.Height = 34;
+        _bulkActionBar.FlowDirection = FlowDirection.RightToLeft;
+        _bulkActionBar.WrapContents = false;
+        _bulkActionBar.BackColor = Color.FromArgb(222, 238, 236);
+        _bulkActionBar.Padding = new Padding(4, 3, 4, 3);
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("×—×–×¨×” ×¢×œ ×”× ×‘×—×¨×™×", (_, _) => ReviewSelectedCards()));
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("×ž×—×™×§×” ×ž×¨×•×‘×”", (_, _) => BulkDeleteCards()));
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("×©×™× ×•×™ ×§×•×©×™", (_, _) => BulkChangeDifficulty()));
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("×”×¡×¨ ×ª×’×™×ª", (_, _) => BulkRemoveTag()));
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("×”×•×¡×£ ×ª×’×™×ª", (_, _) => BulkAddTag()));
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("× ×§×” ×‘×—×™×¨×”", (_, _) => SetAllCardSelections(false)));
+        _bulkActionBar.Controls.Add(CreateHeaderActionButton("×‘×—×¨ ×”×›×œ", (_, _) => SetAllCardSelections(true)));
+    }
+
+    private StatusStrip CreateStatusStrip()
+    {
+        var statusStrip = new StatusStrip
+        {
+            Dock = DockStyle.Bottom,
+            RenderMode = ToolStripRenderMode.System,
+            RightToLeft = RightToLeft.Yes,
+            SizingGrip = false
+        };
+
+        ApplyMirroredRtlWhenAvailable(statusStrip);
+        _statusLabel.Text = "×ž×•×›×Ÿ";
+        statusStrip.Items.Add(_statusLabel);
+        return statusStrip;
+    }
+
+    private void InitializeScreen()
+    {
+        AppendStartupLog("InitializeScreen start");
+        ReloadTree();
+        RefreshTagBindings();
+        _subjectTreeView.SelectedNode = null;
+        _selectedSubjectId = null;
+        ShowStudyCards();
+        AppendStartupLog($"InitializeScreen complete | root nodes={_subjectTreeView.Nodes.Count}");
+        StartPendingVerificationIfNeeded();
+    }
+
+    private void StartPendingVerificationIfNeeded()
+    {
+        if (_verificationStarted || (_verificationRequest is null && _coreVerificationRequest is null && _managementVerificationRequest is null && _reviewVerificationRequest is null) || IsDisposed)
+        {
+            return;
+        }
+
+        _verificationStarted = true;
+        if (_reviewVerificationRequest is not null)
+        {
+            BeginInvoke(new Action(() => _ = RunReviewVerificationAsync(_reviewVerificationRequest)));
+            return;
+        }
+
+        if (_managementVerificationRequest is not null)
+        {
+            BeginInvoke(new Action(() => _ = RunManagementVerificationAsync(_managementVerificationRequest)));
+            return;
+        }
+
+        if (_coreVerificationRequest is not null)
+        {
+            BeginInvoke(new Action(() => _ = RunCoreVerificationAsync(_coreVerificationRequest)));
+            return;
+        }
+
+        BeginInvoke(new Action(() => _ = RunTanakhVerificationAsync(
+            _verificationRequest!.OverviewScreenshotPath,
+            _verificationRequest.DetailScreenshotPath,
+            _verificationRequest.ReportPath)));
+    }
+
+    private void ReloadTree()
+    {
+        _subjectTreeView.BeginUpdate();
+        _subjectTreeView.Nodes.Clear();
+        PopulateTreeNodes(_subjectTreeView.Nodes, _database.GetTreeChildren(null));
+        _subjectTreeView.EndUpdate();
+    }
+
+    private void RefreshTagBindings()
+    {
+        var tags = _database.GetTags();
+        _searchFilterView.BindTags(tags);
+        _reviewFilterView.BindTags(tags);
+        _tagsManagerView.BindTags(tags);
+    }
+
+    private void HandleTreeBeforeExpand(TreeViewCancelEventArgs e)
+    {
+        if (e.Node?.Nodes.Count == 1 && e.Node.Nodes[0].Text == DummyNodeText)
+        {
+            if (!TryPopulateTreeChildren(e.Node))
+            {
+                e.Cancel = true;
+            }
+        }
+    }
+
+    private void PopulateTreeChildren(TreeNode parentNode)
+    {
+        if (parentNode.Tag is not int parentId)
+        {
+            return;
+        }
+
+        _database.EnsureSubjectChildrenLoaded(parentId);
+        parentNode.Nodes.Clear();
+        PopulateTreeNodes(parentNode.Nodes, _database.GetTreeChildren(parentId));
+    }
+
+    private bool TryPopulateTreeChildren(TreeNode parentNode)
+    {
+        try
+        {
+            PopulateTreeChildren(parentNode);
+            return true;
+        }
+        catch (Exception exception)
+        {
+            parentNode.Nodes.Clear();
+            parentNode.Nodes.Add(new TreeNode(DummyNodeText));
+            ShowTreeLoadError(exception);
+            return false;
+        }
+    }
+
+    private static void PopulateTreeNodes(TreeNodeCollection targetNodes, IReadOnlyList<SubjectNodeModel> subjects)
+    {
+        foreach (var subject in subjects)
+        {
+            var node = new TreeNode(subject.Name) { Tag = subject.Id };
+            if (subject.HasChildren)
+            {
+                node.Nodes.Add(new TreeNode(DummyNodeText));
+            }
+
+            targetNodes.Add(node);
+        }
+    }
+
+    private void HandleTreeSelection()
+    {
+        _selectedSubjectId = _subjectTreeView.SelectedNode?.Tag is int subjectId ? subjectId : null;
+        UpdateSelectedNodeLabels();
+
+        switch (_currentWorkspace)
+        {
+            case MainWorkspaceMode.Questions:
+                ShowStudyCards();
+                break;
+            case MainWorkspaceMode.Search when _searchFilterView.LimitToSelectedNode:
+                RunSearch();
+                break;
+            case MainWorkspaceMode.Review when _reviewFilterView.RestrictToSelectedNode:
+                RunReview();
+                break;
+        }
+    }
+
+    private void UpdateSelectedNodeLabels()
+    {
+        var path = _selectedSubjectId.HasValue ? TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value)) : "×›×œ ×”×¡×¤×¨×™×™×”";
+        _searchFilterView.SetSelectedNodePath(path);
+        _reviewFilterView.SetSelectedNodePath(path);
+    }
+
+    private void ShowStudyCards()
+    {
+        _currentWorkspace = MainWorkspaceMode.Questions;
+        ShowCardsWorkspace();
+        _searchFilterView.Visible = false;
+        _reviewFilterView.Visible = false;
+        ActivateTab(_questionsTabItem);
+
+        var items = _database.GetStudyItemsForSubject(_selectedSubjectId);
+        _contentTitleLabel.Text = _selectedSubjectId.HasValue
+            ? $"×©××œ×•×ª / {TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value))}"
+            : "×©××œ×•×ª / ×›×œ ×”×¡×¤×¨×™×™×”";
+
+        PopulateCards(items);
+        _statusLabel.Text = $"× ×˜×¢× ×• {items.Count} ×›×¨×˜×™×¡×™× | ×œ×‘×™×¦×•×¢ ×›×¢×ª: {items.Count(item => item.IsDue)}";
+    }
+
+    private void ShowSearchView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Search;
+        ShowCardsWorkspace();
+        _searchFilterView.Visible = true;
+        _reviewFilterView.Visible = false;
+        ActivateTab(_searchTabItem);
+        _contentTitleLabel.Text = "×—×™×¤×•×© / ×ª×•×¦××•×ª";
+        UpdateSelectedNodeLabels();
+        RunSearch();
+    }
+
+    private void ShowReviewView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Review;
+        ShowCardsWorkspace();
+        _reviewFilterView.Visible = true;
+        _searchFilterView.Visible = false;
+        ActivateTab(_reviewTabItem);
+        _contentTitleLabel.Text = "×—×–×¨×” ×™×•×ž×™×ª / ×ž×¡×•× × ×ª";
+        UpdateSelectedNodeLabels();
+        RunReview();
+    }
+
+    private void ShowTagsView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Tags;
+        _cardsWorkspace.Visible = false;
+        _statusView.Visible = false;
+        _tagsManagerView.Visible = true;
+        RefreshTagBindings();
+        ActivateTab(_tagsTabItem);
+        _contentTitleLabel.Text = "×ª×’×™×•×ª / × ×™×”×•×œ";
+        _statusLabel.Text = "× ×™×”×•×œ ×ª×’×™×•×ª ×¤×¢×™×œ.";
+    }
+
+    private void ShowStatusView()
+    {
+        _currentWorkspace = MainWorkspaceMode.Status;
+        _cardsWorkspace.Visible = false;
+        _tagsManagerView.Visible = false;
+        _statusView.Visible = true;
+        ActivateTab(_statusTabItem);
+        _contentTitleLabel.Text = "×ž×¦×‘ / ×¡×˜×˜×™×¡×˜×™×§×”";
+
+        var stats = _database.GetDashboardStats();
+        _statusView.Bind(stats);
+        _statusLabel.Text = $"×¡×”\"×› {stats.TotalItems} ×¤×¨×™×˜×™× | ×œ×‘×™×¦×•×¢ ×”×™×•× {stats.DueToday} | ×©×™×ž×•×¨ {stats.RetentionRate:0.#}%";
+    }
+
+    private void ShowCardsWorkspace()
+    {
+        _cardsWorkspace.Visible = true;
+        _statusView.Visible = false;
+        _tagsManagerView.Visible = false;
+        _reviewSessionView.Visible = false;
+        _cardPanel.Visible = true;
+        _bulkActionBar.Visible = true;
+    }
+
+    private void RunSearch()
+    {
+        var items = _database.SearchStudyItems(new StudySearchQuery
+        {
+            SearchText = _searchFilterView.SearchText,
+            Book = _searchFilterView.Book,
+            Chapter = _searchFilterView.Chapter,
+            Verse = _searchFilterView.Verse,
+            SubjectId = _selectedSubjectId,
+            TagId = _searchFilterView.SelectedTagId,
+            LimitToSelectedNode = _searchFilterView.LimitToSelectedNode,
+            FailedRecentlyOnly = _searchFilterView.FailedRecentlyOnly,
+            Difficulty = _searchFilterView.SelectedDifficulty
+        });
+
+        PopulateCards(items);
+        _searchFilterView.SetResultSummary($"× ×ž×¦××• {items.Count} ×›×¨×˜×™×¡×™×");
+        _statusLabel.Text = $"×—×™×¤×•×© ×”×•×©×œ×: {items.Count} ×ª×•×¦××•×ª.";
+    }
+
+    private void RunReview()
+    {
+        var items = _database.GetStudyItemsForReview(new StudyReviewFilter
+        {
+            SubjectId = _selectedSubjectId,
+            TagId = _reviewFilterView.SelectedTagId,
+            RestrictToSelectedNode = _reviewFilterView.RestrictToSelectedNode,
+            DueOnly = _reviewFilterView.DueOnly,
+            FailedRecentlyOnly = _reviewFilterView.FailedRecentlyOnly,
+            Difficulty = _reviewFilterView.SelectedDifficulty
+        });
+
+        PopulateCards(items);
+        _reviewFilterView.SetResultSummary($"×œ×ª×¨×’×•×œ ×›×¢×ª: {items.Count} ×›×¨×˜×™×¡×™×");
+        _statusLabel.Text = $"×—×–×¨×” ×ž×¡×•× × ×ª: {items.Count} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void StartFilteredReviewSession()
+    {
+        var items = _database.GetStudyItemsForReview(new StudyReviewFilter
+        {
+            SubjectId = _selectedSubjectId,
+            TagId = _reviewFilterView.SelectedTagId,
+            RestrictToSelectedNode = _reviewFilterView.RestrictToSelectedNode,
+            DueOnly = _reviewFilterView.DueOnly,
+            FailedRecentlyOnly = _reviewFilterView.FailedRecentlyOnly,
+            Difficulty = _reviewFilterView.SelectedDifficulty
+        });
+
+        var title = _selectedSubjectId.HasValue
+            ? $"×¡×©×Ÿ ×—×–×¨×” / {TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value))}"
+            : "×¡×©×Ÿ ×—×–×¨×” / ×›×œ ×”×¡×¤×¨×™×™×”";
+
+        StartReviewSession(items, title, MainWorkspaceMode.Review);
+    }
+
+    private void StartReviewSession(IReadOnlyList<StudyItemModel> items, string title, MainWorkspaceMode returnMode)
+    {
+        if (items.Count == 0)
+        {
+            _statusLabel.Text = "××™×Ÿ ×›×¨×˜×™×¡×™× ×–×ž×™× ×™× ×œ×¡×©×Ÿ ×—×–×¨×”.";
+            return;
+        }
+
+        _reviewSessionItems = items.ToList();
+        _reviewFailedItemIds = [];
+        _reviewSessionIndex = 0;
+        _reviewSessionCompletedCount = 0;
+        _reviewSessionFailedCount = 0;
+        _reviewSessionHighRatingCount = 0;
+        _reviewSessionLowRatingCount = 0;
+        _reviewSessionTitle = title;
+        _reviewSessionReturnMode = returnMode;
+        _currentWorkspace = MainWorkspaceMode.ReviewSession;
+
+        _cardsWorkspace.Visible = true;
+        _statusView.Visible = false;
+        _tagsManagerView.Visible = false;
+        _searchFilterView.Visible = false;
+        _reviewFilterView.Visible = false;
+        _bulkActionBar.Visible = false;
+        _cardPanel.Visible = false;
+        _reviewSessionView.Visible = true;
+        ActivateTab(_reviewTabItem);
+        _contentTitleLabel.Text = title;
+
+        ShowCurrentReviewSessionItem();
+        _statusLabel.Text = $"×”×ª×—×™×œ ×¡×©×Ÿ ×—×–×¨×” ×¢× {_reviewSessionItems.Count} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void ShowCurrentReviewSessionItem()
+    {
+        if (_reviewSessionIndex >= _reviewSessionItems.Count)
+        {
+            CompleteReviewSession();
+            return;
+        }
+
+        var currentItem = _reviewSessionItems[_reviewSessionIndex];
+        var progress = new ReviewSessionProgress
+        {
+            TotalCount = _reviewSessionItems.Count,
+            CompletedCount = _reviewSessionCompletedCount,
+            FailedCount = _reviewSessionFailedCount,
+            RemainingCount = _reviewSessionItems.Count - _reviewSessionCompletedCount
+        };
+
+        _contentTitleLabel.Text = $"{_reviewSessionTitle} / ×›×¨×˜×™×¡ {_reviewSessionIndex + 1} ×ž×ª×•×š {_reviewSessionItems.Count}";
+        _reviewSessionView.ShowReviewItem(currentItem, progress, _reviewSessionTitle);
+    }
+
+    private void HandleReviewSessionRating(ReviewRating rating)
+    {
+        if (_reviewSessionIndex < 0 || _reviewSessionIndex >= _reviewSessionItems.Count)
+        {
+            return;
+        }
+
+        var currentItem = _reviewSessionItems[_reviewSessionIndex];
+        var updated = _database.RateStudyItem(currentItem.Id, rating);
+
+        _reviewSessionCompletedCount++;
+        if (rating == ReviewRating.Again)
+        {
+            _reviewSessionFailedCount++;
+            _reviewFailedItemIds.Add(currentItem.Id);
+        }
+
+        if (rating is ReviewRating.Easy or ReviewRating.Perfect)
+        {
+            _reviewSessionHighRatingCount++;
+        }
+
+        if (rating is ReviewRating.Again or ReviewRating.Hard)
+        {
+            _reviewSessionLowRatingCount++;
+        }
+
+        _reviewSessionItems[_reviewSessionIndex] = updated;
+        _reviewSessionIndex++;
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ '{updated.Topic}' ×“×•×¨×’ ×›-{TranslateRating(rating)}. × ×©××¨×• {_reviewSessionItems.Count - _reviewSessionCompletedCount} ×›×¨×˜×™×¡×™×.";
+        ShowCurrentReviewSessionItem();
+    }
+
+    private void CompleteReviewSession()
+    {
+        if (_reviewSessionItems.Count == 0)
+        {
+            ExitReviewSession();
+            return;
+        }
+
+        var summary = new ReviewSessionSummary
+        {
+            Title = "×¡×™×›×•× ×¡×©×Ÿ ×—×–×¨×”",
+            TotalCount = _reviewSessionItems.Count,
+            CompletedCount = _reviewSessionCompletedCount,
+            FailedCount = _reviewSessionFailedCount,
+            HighRatingCount = _reviewSessionHighRatingCount,
+            LowRatingCount = _reviewSessionLowRatingCount,
+            RemainingCount = Math.Max(0, _reviewSessionItems.Count - _reviewSessionCompletedCount),
+            FailedItemIds = [.. _reviewFailedItemIds]
+        };
+
+        _reviewSessionView.ShowSummary(summary);
+        _contentTitleLabel.Text = "×¡×™×›×•× ×¡×©×Ÿ ×—×–×¨×”";
+        _statusLabel.Text = $"×”×¡×©×Ÿ ×”×¡×ª×™×™×: ×”×•×©×œ×ž×• {summary.CompletedCount}, × ×›×©×œ×• {summary.FailedCount}, × ×©××¨×• {summary.RemainingCount}.";
+    }
+
+    private void RetryFailedReviewSession()
+    {
+        if (_reviewFailedItemIds.Count == 0)
+        {
+            _statusLabel.Text = "××™×Ÿ ×›×¨×˜×™×¡×™× ×©× ×›×©×œ×• ×‘×¡×©×Ÿ ×”××—×¨×•×Ÿ.";
+            return;
+        }
+
+        var failedItems = _database.GetStudyItemsByIds([.. _reviewFailedItemIds]);
+        StartReviewSession(failedItems, "×¡×©×Ÿ × ×•×¡×£ ×¢×œ ×”×›×¨×˜×™×¡×™× ×©× ×›×©×œ×•", _reviewSessionReturnMode);
+    }
+
+    private void ExitReviewSession()
+    {
+        _reviewSessionView.ShowIdleState();
+        _reviewSessionView.Visible = false;
+        _reviewSessionItems = [];
+        _reviewFailedItemIds = [];
+        _reviewSessionIndex = 0;
+        _reviewSessionCompletedCount = 0;
+        _reviewSessionFailedCount = 0;
+        _reviewSessionHighRatingCount = 0;
+        _reviewSessionLowRatingCount = 0;
+        ShowWorkspace(_reviewSessionReturnMode);
+        _statusLabel.Text = "×”×—×–×¨×” ×”×¡×ª×™×™×ž×” ×•×—×–×¨× ×• ×œ×ž×¡×š ×”×§×•×“×.";
+    }
+
+    private void PopulateCards(IReadOnlyList<StudyItemModel> items)
+    {
+        _cardPanel.SuspendLayout();
+        foreach (Control control in _cardPanel.Controls)
+        {
+            control.Dispose();
+        }
+
+        _cardPanel.Controls.Clear();
+
+        if (items.Count == 0)
+        {
+            var emptyLabel = new Label
+            {
+                AutoSize = false,
+                Width = Math.Max(620, _cardPanel.ClientSize.Width - 30),
+                Height = 72,
+                BorderStyle = BorderStyle.FixedSingle,
+                BackColor = ClassicPalette.CardBackground,
+                Text = "××™×Ÿ ×›×¨×˜×™×¡×™× ×‘×ª×¦×•×’×” ×–×•. ×‘×—×¨×• ×¢× ×£ ××—×¨, ×”×¤×¢×™×œ×• ×¡×™× ×•×Ÿ ××—×¨ ××• ×”×•×¡×™×¤×• ×›×¨×˜×™×¡ ×—×“×©.",
+                TextAlign = ContentAlignment.MiddleCenter,
+                RightToLeft = RightToLeft.Yes
+            };
+
+            _cardPanel.Controls.Add(emptyLabel);
+        }
+        else
+        {
+            foreach (var item in items)
+            {
+                var card = new StudyCardControl(item)
+                {
+                    Width = GetCardWidth()
+                };
+
+                card.RatingClicked += (_, rating) => HandleRating(item.Id, rating);
+                card.EditClicked += (_, itemId) => OpenEditDialog(itemId);
+                card.DeleteClicked += (_, itemId) => DeleteCard(itemId);
+                card.TagsClicked += (_, itemId) => OpenTagsDialog(itemId);
+                _cardPanel.Controls.Add(card);
+            }
+        }
+
+        _cardPanel.ResumeLayout();
+    }
+
+    private void ResizeCards()
+    {
+        var width = GetCardWidth();
+        foreach (Control control in _cardPanel.Controls)
+        {
+            control.Width = width;
+        }
+    }
+
+    private int GetCardWidth()
+    {
+        return Math.Max(620, _cardPanel.ClientSize.Width - SystemInformation.VerticalScrollBarWidth - 24);
+    }
+
+    private void HandleRating(int itemId, ReviewRating rating)
+    {
+        var updated = _database.RateStudyItem(itemId, rating);
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ '{updated.Topic}' ×¡×•×ž×Ÿ ×›-{TranslateRating(rating)}. ×”×ª××¨×™×š ×”×‘×: {updated.DueDate:dd/MM/yyyy}";
+        RefreshCurrentView();
+    }
+
+    private void RefreshCurrentView()
+    {
+        if (_currentWorkspace == MainWorkspaceMode.ReviewSession)
+        {
+            ShowWorkspace(_reviewSessionReturnMode);
+            return;
+        }
+
+        ShowWorkspace(_currentWorkspace);
+    }
+
+    private void ShowWorkspace(MainWorkspaceMode mode)
+    {
+        switch (mode)
+        {
+            case MainWorkspaceMode.Questions:
+                ShowStudyCards();
+                break;
+            case MainWorkspaceMode.Search:
+                ShowSearchView();
+                break;
+            case MainWorkspaceMode.Review:
+                ShowReviewView();
+                break;
+            case MainWorkspaceMode.Tags:
+                ShowTagsView();
+                break;
+            case MainWorkspaceMode.Status:
+                ShowStatusView();
+                break;
+            case MainWorkspaceMode.ReviewSession:
+                break;
+        }
+    }
+
+    private void OpenAddDialog()
+    {
+        var subjects = _database.GetAssignableSubjects();
+        var tags = _database.GetTags();
+        using var dialog = new AddStudyItemForm(subjects, tags, _selectedSubjectId);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        var itemId = _database.AddStudyItem(dialog.SelectedSubjectId, dialog.Topic, dialog.Question, dialog.Answer, dialog.SelectedDifficulty);
+        _database.SetTagsForStudyItem(itemId, dialog.SelectedTagIds);
+        RefreshTagBindings();
+        ReloadTree();
+        SelectNodeBySubjectId(dialog.SelectedSubjectId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"× ×•×¡×£ ×›×¨×˜×™×¡ ×—×“×©: {dialog.Topic}";
+    }
+
+    private void OpenEditDialog(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var subjects = _database.GetAssignableSubjects();
+        var tags = _database.GetTags();
+        using var dialog = new AddStudyItemForm(subjects, tags, item.SubjectId, item);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.UpdateStudyItem(itemId, dialog.SelectedSubjectId, dialog.Topic, dialog.Question, dialog.Answer, dialog.SelectedDifficulty);
+        _database.SetTagsForStudyItem(itemId, dialog.SelectedTagIds);
+        RefreshTagBindings();
+        ReloadTree();
+        SelectNodeBySubjectId(dialog.SelectedSubjectId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ ×¢×•×“×›×Ÿ: {dialog.Topic}";
+    }
+
+    private void OpenTagsDialog(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var tags = _database.GetTags();
+        using var dialog = new TagAssignmentForm(item.Topic, tags, item.Tags.Select(tag => tag.Id).ToArray());
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.SetTagsForStudyItem(itemId, dialog.SelectedTagIds);
+        RefreshTagBindings();
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×ª×’×™×•×ª ×¢×•×“×›× ×• ×¢×‘×•×¨: {item.Topic}";
+    }
+
+    private void DeleteCard(int itemId)
+    {
+        var item = _database.GetStudyItem(itemId);
+        if (item is null)
+        {
+            return;
+        }
+
+        var result = MessageBox.Show(
+            this,
+            $"×œ×ž×—×•×§ ××ª '{item.Topic}'?",
+            "×ž×—×™×§×ª ×›×¨×˜×™×¡",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _database.DeleteStudyItem(itemId);
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×›×¨×˜×™×¡ × ×ž×—×§: {item.Topic}";
+    }
+
+    private void ImportCsv()
+    {
+        using var dialog = new CsvImportForm(
+            _database,
+            _selectedSubjectId,
+            _selectedSubjectId.HasValue ? TranslatePath(_database.GetSubjectPath(_selectedSubjectId.Value)) : "×œ×œ× ×¦×•×ž×ª ×‘×¨×™×¨×ª ×ž×—×“×œ");
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        ReloadTree();
+        RefreshTagBindings();
+        RefreshCurrentView();
+        _statusLabel.Text = "×™×™×‘×•× ×”-CSV ×”×•×©×œ×.";
+    }
+
+    private void BulkAddTag()
+    {
+        var selectedIds = GetSelectedCardIds();
+        if (selectedIds.Length == 0)
+        {
+            _statusLabel.Text = "×œ× × ×‘×—×¨×• ×›×¨×˜×™×¡×™×.";
+            return;
+        }
+
+        using var dialog = new TagSelectionForm("×”×•×¡×¤×ª ×ª×’×™×ª ×œ×›×¨×˜×™×¡×™× × ×‘×—×¨×™×", _database.GetTags());
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.SelectedTagIds.Count == 0)
+        {
+            return;
+        }
+
+        _database.AddTagsToStudyItems(selectedIds, dialog.SelectedTagIds);
+        RefreshTagBindings();
+        RefreshCurrentView();
+        _statusLabel.Text = $"× ×•×¡×¤×• ×ª×’×™×•×ª ×œ-{selectedIds.Length} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void BulkRemoveTag()
+    {
+        var selectedIds = GetSelectedCardIds();
+        if (selectedIds.Length == 0)
+        {
+            _statusLabel.Text = "×œ× × ×‘×—×¨×• ×›×¨×˜×™×¡×™×.";
+            return;
+        }
+
+        using var dialog = new TagSelectionForm("×”×¡×¨×ª ×ª×’×™×ª ×ž×›×¨×˜×™×¡×™× × ×‘×—×¨×™×", _database.GetTags());
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK || dialog.SelectedTagIds.Count == 0)
+        {
+            return;
+        }
+
+        _database.RemoveTagsFromStudyItems(selectedIds, dialog.SelectedTagIds);
+        RefreshTagBindings();
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×•×¡×¨×• ×ª×’×™×•×ª ×ž-{selectedIds.Length} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void BulkChangeDifficulty()
+    {
+        var selectedIds = GetSelectedCardIds();
+        if (selectedIds.Length == 0)
+        {
+            _statusLabel.Text = "×œ× × ×‘×—×¨×• ×›×¨×˜×™×¡×™×.";
+            return;
+        }
+
+        using var dialog = new DifficultySelectionForm();
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.SetManualDifficultyForStudyItems(selectedIds, dialog.SelectedDifficulty);
+        RefreshCurrentView();
+        _statusLabel.Text = $"×”×§×•×©×™ ×¢×•×“×›×Ÿ ×¢×‘×•×¨ {selectedIds.Length} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void BulkDeleteCards()
+    {
+        var selectedIds = GetSelectedCardIds();
+        if (selectedIds.Length == 0)
+        {
+            _statusLabel.Text = "×œ× × ×‘×—×¨×• ×›×¨×˜×™×¡×™×.";
+            return;
+        }
+
+        var result = MessageBox.Show(
+            this,
+            $"×œ×ž×—×•×§ {selectedIds.Length} ×›×¨×˜×™×¡×™× × ×‘×—×¨×™×?",
+            "×ž×—×™×§×” ×ž×¨×•×‘×”",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _database.DeleteStudyItems(selectedIds);
+        RefreshCurrentView();
+        _statusLabel.Text = $"× ×ž×—×§×• {selectedIds.Length} ×›×¨×˜×™×¡×™×.";
+    }
+
+    private void ReviewSelectedCards()
+    {
+        var selectedIds = GetSelectedCardIds();
+        if (selectedIds.Length == 0)
+        {
+            _statusLabel.Text = "×œ× × ×‘×—×¨×• ×›×¨×˜×™×¡×™×.";
+            return;
+        }
+
+        StartReviewSession(_database.GetStudyItemsByIds(selectedIds), $"×¡×©×Ÿ ×—×–×¨×” / × ×‘×—×¨×• {selectedIds.Length} ×›×¨×˜×™×¡×™×", _currentWorkspace);
+    }
+
+    private int[] GetSelectedCardIds()
+    {
+        return _cardPanel.Controls
+            .OfType<StudyCardControl>()
+            .Where(card => card.IsSelected)
+            .Select(card => card.ItemId)
+            .ToArray();
+    }
+
+    private void SetAllCardSelections(bool isSelected)
+    {
+        foreach (var card in _cardPanel.Controls.OfType<StudyCardControl>())
+        {
+            card.IsSelected = isSelected;
+        }
+
+        _statusLabel.Text = isSelected ? "×›×œ ×”×›×¨×˜×™×¡×™× ×‘×ª×¦×•×’×” × ×‘×—×¨×•." : "×‘×—×™×¨×ª ×”×›×¨×˜×™×¡×™× × ×•×§×ª×”.";
+    }
+
+    private void CreateTag()
+    {
+        using var dialog = new TagEditForm("×ª×’×™×ª ×—×“×©×”");
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.AddTag(dialog.TagName);
+        RefreshTagBindings();
+        _statusLabel.Text = $"×”×ª×’×™×ª × ×•×¡×¤×”: {dialog.TagName}";
+    }
+
+    private void EditTag(TagModel tag)
+    {
+        using var dialog = new TagEditForm("×¢×¨×™×›×ª ×ª×’×™×ª", tag.Name);
+        PrepareDialog(dialog);
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.UpdateTag(tag.Id, dialog.TagName);
+        RefreshTagBindings();
+        _statusLabel.Text = $"×”×ª×’×™×ª ×¢×•×“×›× ×”: {dialog.TagName}";
+    }
+
+    private void DeleteTag(TagModel tag)
+    {
+        var result = MessageBox.Show(
+            this,
+            $"×œ×ž×—×•×§ ××ª ×”×ª×’×™×ª '{tag.Name}'?",
+            "×ž×—×™×§×ª ×ª×’×™×ª",
+            MessageBoxButtons.YesNo,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button2,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        if (result != DialogResult.Yes)
+        {
+            return;
+        }
+
+        _database.DeleteTag(tag.Id);
+        RefreshTagBindings();
+        _statusLabel.Text = $"×”×ª×’×™×ª × ×ž×—×§×”: {tag.Name}";
+    }
+
+    private void FilterByTag(TagModel tag)
+    {
+        _currentWorkspace = MainWorkspaceMode.Search;
+        ShowCardsWorkspace();
+        _searchFilterView.Visible = true;
+        _reviewFilterView.Visible = false;
+        ActivateTab(_searchTabItem);
+        _contentTitleLabel.Text = $"×—×™×¤×•×© / ×ª×’×™×ª {tag.Name}";
+
+        var items = _database.SearchStudyItems(new StudySearchQuery
+        {
+            SearchText = string.Empty,
+            SubjectId = _selectedSubjectId,
+            TagId = tag.Id,
+            LimitToSelectedNode = false
+        });
+
+        PopulateCards(items);
+        _searchFilterView.SetResultSummary($"×”×ª×’×™×ª '{tag.Name}' ×ž×—×–×™×¨×” {items.Count} ×›×¨×˜×™×¡×™×");
+        _statusLabel.Text = $"×¡×™× ×•×Ÿ ×œ×¤×™ ×ª×’×™×ª: {tag.Name}";
+    }
+
+    private void BackupDatabase()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "SQLite database (*.db)|*.db",
+            FileName = $"×’×™×‘×•×™-{DateTime.Today:yyyyMMdd}.db",
+            Title = "×’×™×‘×•×™ ×ž×¡×“ × ×ª×•× ×™×"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.BackupDatabase(dialog.FileName);
+        _statusLabel.Text = "×”×’×™×‘×•×™ × ×©×ž×¨ ×‘×”×¦×œ×—×”";
+    }
+
+    private void ExportCsv()
+    {
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "CSV files (*.csv)|*.csv",
+            FileName = "×™×™×¦×•×-×›×¨×˜×™×¡×™×.csv",
+            Title = "×™×™×¦×•× ×›×¨×˜×™×¡×™× ×œ-CSV"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.ExportToCsv(dialog.FileName);
+        _statusLabel.Text = "×§×•×‘×¥ ×”-CSV × ×©×ž×¨ ×‘×”×¦×œ×—×”";
+    }
+
+    private void ExportPrintRange()
+    {
+        using var rangeForm = new PrintRangeForm();
+        PrepareDialog(rangeForm);
+        if (rangeForm.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            Filter = "HTML files (*.html)|*.html",
+            FileName = $"×”×“×¤×¡×”-{rangeForm.StartDate:yyyyMMdd}-{rangeForm.EndDate:yyyyMMdd}.html",
+            Title = "×™×™×¦×•× ×§×•×‘×¥ HTML ×œ×”×“×¤×¡×”"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _database.ExportPrintableHtml(rangeForm.StartDate, rangeForm.EndDate, dialog.FileName);
+        _statusLabel.Text = "×§×•×‘×¥ ×”×”×“×¤×¡×” × ×©×ž×¨ ×‘×”×¦×œ×—×”";
+    }
+
+    private void ShowPlaceholder(string moduleName)
+    {
+        _statusLabel.Text = $"×”×ž×•×“×•×œ '{moduleName}' ×¢×“×™×™×Ÿ ×œ× ×—×•×‘×¨.";
+    }
+
+    private void ShowHelp()
+    {
+        MessageBox.Show(
+            this,
+            "×œ×©×™×ž×•×© ×ž×”×™×¨:\n\n1. ×‘×—×¨×• × ×•×©× ×ž×”×¢×¥ ×”×™×ž× ×™.\n2. ×”×•×¡×™×¤×• ×›×¨×˜×™×¡×™× ××• ×¤×ª×—×• ×—×™×¤×•×©/×ª×’×™×•×ª.\n3. ×œ×”×¤×¢×œ×ª ×—×–×¨×” ×ž×¡×•× × ×ª ×¢×‘×¨×• ×œ×œ×©×•× ×™×ª ×—×–×¨×” ×™×•×ž×™×ª.\n4. × ×™×”×•×œ ×ª×’×™×•×ª ×ž×ª×‘×¦×¢ ×‘×œ×©×•× ×™×ª ×ª×’×™×•×ª ××• ×ž×ª×•×š ×›×œ ×›×¨×˜×™×¡.",
+            "×¢×–×¨×”",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    private void ShowAbout()
+    {
+        MessageBox.Show(
+            this,
+            "×ž×¢×¨×›×ª ×—×–×¨×•×ª ×ž×§×•×ž×™×ª ×œ×œ×™×ž×•×“ ×ª×•×¨×” ×¢× ×ž×¡×“ SQLite, ××œ×’×•×¨×™×ª× SM-2, ×—×™×¤×•×©, ×ª×’×™×•×ª, ×—×–×¨×” ×ž×¡×•× × ×ª ×•×§×™×©×•×¨ ×ž×œ× ×œ×¢×¥ ×”×¡×¤×¨×™×™×”.",
+            "××•×“×•×ª",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    private void SelectNodeBySubjectId(int subjectId)
+    {
+        TreeNodeCollection nodes = _subjectTreeView.Nodes;
+        TreeNode? node = null;
+
+        foreach (var subject in _database.GetSubjectLineage(subjectId))
+        {
+            node = FindNode(nodes, subject.Id);
+            if (node is null)
+            {
+                return;
+            }
+
+            if (node.Nodes.Count == 1 && node.Nodes[0].Text == DummyNodeText)
+            {
+                if (!TryPopulateTreeChildren(node))
+                {
+                    return;
+                }
+            }
+
+            nodes = node.Nodes;
+        }
+
+        if (node is not null)
+        {
+            _subjectTreeView.SelectedNode = node;
+            node.EnsureVisible();
+        }
+    }
+
+    private static TreeNode? FindNode(TreeNodeCollection nodes, int subjectId)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (node.Tag is int id && id == subjectId)
+            {
+                return node;
+            }
+
+            var child = FindNode(node.Nodes, subjectId);
+            if (child is not null)
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static void PrepareDialog(Form dialog)
+    {
+        dialog.RightToLeft = RightToLeft.Yes;
+        dialog.RightToLeftLayout = false;
+        ApplyRightToLeftRecursive(dialog);
+    }
+
+    private static void ApplyRightToLeftRecursive(Control parent)
+    {
+        parent.RightToLeft = RightToLeft.Yes;
+        ApplyMirroredRtlWhenAvailable(parent);
+        foreach (Control child in parent.Controls)
+        {
+            ApplyRightToLeftRecursive(child);
+        }
+    }
+
+    private static string TranslateRating(ReviewRating rating)
+    {
+        return rating switch
+        {
+            ReviewRating.Again => "×’×¨×•×¢",
+            ReviewRating.Hard => "×—×œ×©",
+            ReviewRating.Good => "×‘×¡×“×¨",
+            ReviewRating.Easy => "×˜×•×‘",
+            ReviewRating.Perfect => "×ž×¦×•×™×Ÿ",
+            _ => string.Empty
+        };
+    }
+
+    private static string TranslatePath(string path)
+    {
+        return string.IsNullOrWhiteSpace(path)
+            ? "×›×œ ×”×¡×¤×¨×™×™×”"
+            : path.Replace(" > ", " / ", StringComparison.Ordinal);
+    }
+
+    private static ToolStripMenuItem CreateTopTab(ToolStripMenuItem item, string text, EventHandler onClick)
+    {
+        var font = new Font("Microsoft Sans Serif", 10.5F, FontStyle.Bold);
+        item.Text = text;
+        item.Font = font;
+        item.AutoSize = false;
+        item.Width = Math.Max(116, TextRenderer.MeasureText(text, font).Width + 34);
+        item.Height = 34;
+        item.Margin = new Padding(3, 0, 3, 0);
+        item.Padding = new Padding(12, 4, 12, 4);
+        item.BackColor = ClassicPalette.ToolbarBackground;
+        item.ForeColor = Color.White;
+        item.Click += onClick;
+        return item;
+    }
+
+    private static ToolStripButton CreateFormatButton(string text, Font? font = null)
+    {
+        var resolvedFont = font ?? new Font("Microsoft Sans Serif", 9.5F, FontStyle.Bold);
+        var button = new ToolStripButton
+        {
+            Text = text,
+            AutoSize = false,
+            Width = Math.Max(text.Length > 2 ? 66 : 42, TextRenderer.MeasureText(text, resolvedFont).Width + 18),
+            Height = 28,
+            Margin = new Padding(2, 0, 2, 0),
+            BackColor = Color.FromArgb(216, 242, 239),
+            DisplayStyle = ToolStripItemDisplayStyle.Text,
+            ForeColor = Color.Black
+        };
+
+        button.Font = resolvedFont;
+        return button;
+    }
+
+    private static ToolStripComboBox CreateFormatCombo()
+    {
+        var combo = new ToolStripComboBox
+        {
+            Width = 70,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+
+        combo.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Regular);
+        combo.Items.AddRange(["8", "10", "12", "14", "16", "18"]);
+        combo.SelectedIndex = 2;
+        return combo;
+    }
+
+    private static ToolStripSeparator CreateToolStripSeparator()
+    {
+        return new ToolStripSeparator
+        {
+            Margin = new Padding(4, 0, 4, 0)
+        };
+    }
+
+    private static Button CreateHeaderActionButton(string text, EventHandler onClick)
+    {
+        var font = new Font("Microsoft Sans Serif", 9.5F, FontStyle.Bold);
+        var button = new Button
+        {
+            Text = text,
+            Width = Math.Max(96, TextRenderer.MeasureText(text, font).Width + 22),
+            Height = 28,
+            Margin = new Padding(3, 4, 3, 3),
+            FlatStyle = FlatStyle.Flat,
+            BackColor = Color.FromArgb(208, 237, 234),
+            Font = font
+        };
+
+        button.FlatAppearance.BorderColor = Color.FromArgb(45, 117, 110);
+        button.Click += onClick;
+        return button;
+    }
+
+    private static void ApplyMirroredRtlWhenAvailable(object target)
+    {
+        if (target is Control control)
+        {
+            control.RightToLeft = RightToLeft.Yes;
+        }
+
+        var property = target.GetType().GetProperty("RightToLeftLayout");
+        if (property is not null && property.CanWrite && property.PropertyType == typeof(bool))
+        {
+            property.SetValue(target, true);
+        }
+    }
+
+    private void ActivateTab(ToolStripMenuItem activeItem)
+    {
+        foreach (var item in new[] { _questionsTabItem, _tagsTabItem, _searchTabItem, _reviewTabItem, _statusTabItem })
+        {
+            item.BackColor = item == activeItem
+                ? Color.FromArgb(72, 155, 147)
+                : ClassicPalette.ToolbarBackground;
+            item.ForeColor = Color.White;
+        }
+    }
+
+    private void ShowTreeLoadError(Exception exception)
+    {
+        MessageBox.Show(
+            this,
+            $"×œ× × ×™×ª×Ÿ ×œ×˜×¢×•×Ÿ ×›×¢×ª ××ª × ×ª×•× ×™ ×”×¡×¤×¨×™×™×”.\n\n{exception.Message}",
+            "×©×’×™××ª ×˜×¢×™× ×”",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Warning,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+    }
+
+    public async Task RunTanakhVerificationAsync(string overviewScreenshotPath, string detailScreenshotPath, string reportPath)
+    {
+        var expandedPaths = new List<string>();
+        Exception? failure = null;
+        var logPath = Path.ChangeExtension(reportPath, ".log");
+
+        try
+        {
+            await Task.Delay(1200);
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "×ª× \"×š")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª× \"×š ×œ× × ×ž×¦× ×‘×¢×¥.");
+            await ExpandNodeAsync(tanakhNode, expandedPaths);
+
+            var torahNode = FindChildNodeByText(tanakhNode, "×ª×•×¨×”")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª×•×¨×” ×œ× × ×ž×¦×.");
+            var prophetsNode = FindChildNodeByText(tanakhNode, "× ×‘×™××™×")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª × ×‘×™××™× ×œ× × ×ž×¦×.");
+            var writingsNode = FindChildNodeByText(tanakhNode, "×›×ª×•×‘×™×")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×›×ª×•×‘×™× ×œ× × ×ž×¦×.");
+
+            await ExpandNodeAsync(torahNode, expandedPaths);
+            await ExpandNodeAsync(prophetsNode, expandedPaths);
+            await ExpandNodeAsync(writingsNode, expandedPaths);
+
+            var torahBook = GetFirstRealChild(torahNode) ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¡×¤×¨ ×‘×ª×•×¨×”.");
+            await ExpandNodeAsync(torahBook, expandedPaths);
+            var torahChapter = GetFirstRealChild(torahBook) ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¨×§ ×‘×¡×¤×¨.");
+            await ExpandNodeAsync(torahChapter, expandedPaths);
+            var verseNode = GetFirstRealChild(torahChapter) ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¡×•×§ ×‘×¤×¨×§.");
+
+            _subjectTreeView.SelectedNode = tanakhNode;
+            tanakhNode.EnsureVisible();
+            await Task.Delay(600);
+            CaptureWindowScreenshot(overviewScreenshotPath);
+
+            _subjectTreeView.SelectedNode = verseNode;
+            verseNode.EnsureVisible();
+            await Task.Delay(600);
+            CaptureWindowScreenshot(detailScreenshotPath);
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+            AppendVerificationLog(logPath, exception.ToString());
+        }
+        finally
+        {
+            SaveTanakhVerificationReport(reportPath, overviewScreenshotPath, detailScreenshotPath, expandedPaths, failure);
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private async Task RunCoreVerificationAsync(CoreVerificationRequest request)
+    {
+        Exception? failure = null;
+        var logPath = Path.ChangeExtension(request.ReportPath, ".log");
+        var payload = new Dictionary<string, object?>();
+
+        try
+        {
+            await Task.Delay(1200);
+
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "×ª× \"×š")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª× \"×š ×œ× × ×ž×¦× ×‘×¢×¥.");
+            await ExpandNodeAsync(tanakhNode, []);
+            var torahNode = FindChildNodeByText(tanakhNode, "×ª×•×¨×”")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª×•×¨×” ×œ× × ×ž×¦×.");
+            await ExpandNodeAsync(torahNode, []);
+
+            var bookNode = GetFirstRealChild(torahNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¡×¤×¨ ×‘×ª×•×¨×”.");
+            await ExpandNodeAsync(bookNode, []);
+
+            var chapterNode = GetFirstRealChild(bookNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¨×§ ×‘×¡×¤×¨.");
+            await ExpandNodeAsync(chapterNode, []);
+
+            var verseNode = GetFirstRealChild(chapterNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¡×•×§ ×‘×¤×¨×§.");
+            _subjectTreeView.SelectedNode = verseNode;
+            HandleTreeSelection();
+
+            var searchTagId = _database.AddTag("×××-×—×™×¤×•×©");
+            var hardTagId = _database.AddTag("×××-×§×©×”");
+            RefreshTagBindings();
+
+            var seedItems = EnsureCoreVerificationStudyItems((int)verseNode.Tag!, searchTagId, hardTagId);
+            payload["SeededItemIds"] = seedItems;
+            payload["SelectedPath"] = verseNode.FullPath;
+
+            ShowStudyCards();
+            await Task.Delay(500);
+            CaptureWindowScreenshot(request.TreeScreenshotPath);
+
+            ShowTagsView();
+            RefreshTagBindings();
+            _tagsManagerView.SelectTag(searchTagId);
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.TagsScreenshotPath);
+
+            ShowSearchView();
+            _searchFilterView.SetSearchState("××™×ž×•×ª×—×™×¤×•×©", true, searchTagId);
+            RunSearch();
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.SearchScreenshotPath);
+
+            ShowReviewView();
+            _reviewFilterView.SetFilterState(true, false, true, StudyDifficulty.Hard, hardTagId);
+            RunReview();
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.ReviewScreenshotPath);
+
+            payload["SearchTagId"] = searchTagId;
+            payload["HardTagId"] = hardTagId;
+            payload["SearchResults"] = _database.SearchStudyItems(new StudySearchQuery
+            {
+                SearchText = "××™×ž×•×ª×—×™×¤×•×©",
+                SubjectId = (int)verseNode.Tag!,
+                TagId = searchTagId,
+                LimitToSelectedNode = true
+            }).Count;
+            payload["ReviewResults"] = _database.GetStudyItemsForReview(new StudyReviewFilter
+            {
+                SubjectId = (int)verseNode.Tag!,
+                TagId = hardTagId,
+                RestrictToSelectedNode = true,
+                DueOnly = false,
+                FailedRecentlyOnly = true,
+                Difficulty = StudyDifficulty.Hard
+            }).Count;
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+            AppendVerificationLog(logPath, exception.ToString());
+        }
+        finally
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(request.ReportPath)!);
+            payload["Success"] = failure is null;
+            payload["Failure"] = failure?.ToString();
+            payload["SearchScreenshot"] = request.SearchScreenshotPath;
+            payload["TagsScreenshot"] = request.TagsScreenshotPath;
+            payload["ReviewScreenshot"] = request.ReviewScreenshotPath;
+            payload["TreeScreenshot"] = request.TreeScreenshotPath;
+
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions
+            {
+                WriteIndented = true
+            });
+            File.WriteAllText(request.ReportPath, json);
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private async Task RunManagementVerificationAsync(ManagementVerificationRequest request)
+    {
+        Exception? failure = null;
+        var payload = new Dictionary<string, object?>();
+
+        try
+        {
+            await Task.Delay(1200);
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "×ª× \"×š")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª× \"×š ×œ× × ×ž×¦× ×‘×¢×¥.");
+            await ExpandNodeAsync(tanakhNode, []);
+            var torahNode = FindChildNodeByText(tanakhNode, "×ª×•×¨×”")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª×•×¨×” ×œ× × ×ž×¦×.");
+            await ExpandNodeAsync(torahNode, []);
+            var bookNode = GetFirstRealChild(torahNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¡×¤×¨ ×‘×ª×•×¨×”.");
+            await ExpandNodeAsync(bookNode, []);
+            var chapterNode = GetFirstRealChild(bookNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¨×§.");
+            await ExpandNodeAsync(chapterNode, []);
+            var verseNode = GetFirstRealChild(chapterNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¡×•×§.");
+            _subjectTreeView.SelectedNode = verseNode;
+            HandleTreeSelection();
+
+            var searchTagId = _database.AddTag("×××-×—×™×¤×•×©");
+            var hardTagId = _database.AddTag("×××-×§×©×”");
+            RefreshTagBindings();
+            var itemIds = EnsureCoreVerificationStudyItems((int)verseNode.Tag!, searchTagId, hardTagId);
+
+            var sampleCsvPath = Path.Combine(Path.GetDirectoryName(request.ReportPath)!, "sample-import.csv");
+            CsvUtility.WriteRows(sampleCsvPath,
+            [
+                ["× ×•×©×", "×©××œ×”", "×ª×©×•×‘×”", "×¡×¤×¨", "×¤×¨×§", "×¤×¡×•×§", "×§×•×©×™", "×ª×’×™×•×ª"],
+                ["×™×™×‘×•× ×‘×“×™×§×”", "×©××œ×” ×ž×§×•×‘×¥ CSV", "×ª×©×•×‘×ª ×™×™×‘×•×", bookNode.Text, chapterNode.Text, verseNode.Text, "×‘×™× ×•× ×™×ª", "×××-×—×™×¤×•×©;×™×™×‘×•×"]
+            ]);
+
+            using (var importForm = new CsvImportForm(_database, (int)verseNode.Tag!, TranslatePath(_database.GetSubjectPath((int)verseNode.Tag!))))
+            {
+                PrepareDialog(importForm);
+                importForm.Show(this);
+                importForm.AutomationLoadPreview(sampleCsvPath);
+                await Task.Delay(500);
+                CaptureControlScreenshot(importForm, request.ImportScreenshotPath);
+                payload["ImportPreviewAccepted"] = importForm.LastPreview?.AcceptedCount;
+                payload["ImportPreviewRejected"] = importForm.LastPreview?.RejectedCount;
+                payload["ImportedCount"] = importForm.AutomationImport();
+                await Task.Delay(300);
+            }
+
+            var existingItem = _database.GetStudyItem(itemIds[0]) ?? throw new InvalidOperationException("×›×¨×˜×™×¡ ×œ× × ×ž×¦×.");
+            using (var cardForm = new AddStudyItemForm(_database.GetAssignableSubjects(), _database.GetTags(), existingItem.SubjectId, existingItem))
+            {
+                PrepareDialog(cardForm);
+                cardForm.Show(this);
+                await Task.Delay(500);
+                CaptureControlScreenshot(cardForm, request.CardDialogScreenshotPath);
+                cardForm.Close();
+            }
+
+            ShowSearchView();
+            _searchFilterView.SetAdvancedState("××™×ž×•×ª×ž×ª×§×“×", bookNode.Text, chapterNode.Text.Replace("×¤×¨×§ ", string.Empty, StringComparison.Ordinal), verseNode.Text.Replace("×¤×¡×•×§ ", string.Empty, StringComparison.Ordinal), hardTagId, StudyDifficulty.Hard, true, true);
+            RunSearch();
+            await Task.Delay(400);
+            CaptureWindowScreenshot(request.AdvancedSearchScreenshotPath);
+            payload["AdvancedSearchResults"] = _database.SearchStudyItems(new StudySearchQuery
+            {
+                SearchText = "××™×ž×•×ª×ž×ª×§×“×",
+                Book = bookNode.Text,
+                Chapter = chapterNode.Text,
+                Verse = verseNode.Text,
+                TagId = hardTagId,
+                Difficulty = StudyDifficulty.Hard,
+                FailedRecentlyOnly = true,
+                SubjectId = (int)verseNode.Tag!,
+                LimitToSelectedNode = true
+            }).Count;
+
+            ShowStudyCards();
+            SetAllCardSelections(true);
+            await Task.Delay(300);
+            CaptureWindowScreenshot(request.BulkScreenshotPath);
+            payload["BulkSelectedCount"] = GetSelectedCardIds().Length;
+            payload["TagsAfterRun"] = _database.GetTags().Count;
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(request.ReportPath)!);
+            payload["Success"] = failure is null;
+            payload["Failure"] = failure?.ToString();
+            payload["ImportScreenshot"] = request.ImportScreenshotPath;
+            payload["CardDialogScreenshot"] = request.CardDialogScreenshotPath;
+            payload["AdvancedSearchScreenshot"] = request.AdvancedSearchScreenshotPath;
+            payload["BulkScreenshot"] = request.BulkScreenshotPath;
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(request.ReportPath, json);
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private async Task RunReviewVerificationAsync(ReviewVerificationRequest request)
+    {
+        Exception? failure = null;
+        var payload = new Dictionary<string, object?>();
+
+        try
+        {
+            await Task.Delay(1200);
+            var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "×ª× \"×š")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª× \"×š ×œ× × ×ž×¦× ×‘×¢×¥.");
+            await ExpandNodeAsync(tanakhNode, []);
+            var torahNode = FindChildNodeByText(tanakhNode, "×ª×•×¨×”")
+                ?? throw new InvalidOperationException("×¦×•×ž×ª ×ª×•×¨×” ×œ× × ×ž×¦×.");
+            await ExpandNodeAsync(torahNode, []);
+            var bookNode = GetFirstRealChild(torahNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¡×¤×¨ ×‘×ª×•×¨×”.");
+            await ExpandNodeAsync(bookNode, []);
+            var chapterNode = GetFirstRealChild(bookNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¨×§.");
+            await ExpandNodeAsync(chapterNode, []);
+            var verseNode = GetFirstRealChild(chapterNode)
+                ?? throw new InvalidOperationException("×œ× × ×ž×¦× ×¤×¡×•×§.");
+            _subjectTreeView.SelectedNode = verseNode;
+            HandleTreeSelection();
+
+            var itemIds = EnsureReviewVerificationStudyItems((int)verseNode.Tag!);
+            var items = _database.GetStudyItemsByIds(itemIds);
+
+            StartReviewSession(items, "××™×ž×•×ª ×¡×©×Ÿ ×—×–×¨×”", MainWorkspaceMode.Review);
+            await Task.Delay(450);
+            _reviewSessionView.AutomationRevealAnswer();
+            await Task.Delay(300);
+            CaptureWindowScreenshot(request.SessionScreenshotPath);
+
+            _reviewSessionView.AutomationRate(ReviewRating.Again);
+            await Task.Delay(200);
+            _reviewSessionView.AutomationRevealAnswer();
+            await Task.Delay(120);
+            _reviewSessionView.AutomationRate(ReviewRating.Hard);
+            await Task.Delay(200);
+            _reviewSessionView.AutomationRevealAnswer();
+            await Task.Delay(120);
+            _reviewSessionView.AutomationRate(ReviewRating.Good);
+            await Task.Delay(200);
+            _reviewSessionView.AutomationRevealAnswer();
+            await Task.Delay(120);
+            _reviewSessionView.AutomationRate(ReviewRating.Perfect);
+            await Task.Delay(450);
+
+            CaptureWindowScreenshot(request.SummaryScreenshotPath);
+            payload["ItemIds"] = itemIds;
+            payload["TotalItems"] = items.Count;
+            payload["FailedCount"] = 1;
+            payload["LowRatingsCount"] = 2;
+            payload["HighRatingsCount"] = 1;
+        }
+        catch (Exception exception)
+        {
+            failure = exception;
+        }
+        finally
+        {
+            Directory.CreateDirectory(Path.GetDirectoryName(request.ReportPath)!);
+            payload["Success"] = failure is null;
+            payload["Failure"] = failure?.ToString();
+            payload["SessionScreenshot"] = request.SessionScreenshotPath;
+            payload["SummaryScreenshot"] = request.SummaryScreenshotPath;
+            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+            File.WriteAllText(request.ReportPath, json);
+            await Task.Delay(400);
+            BeginInvoke(new Action(Close));
+        }
+    }
+
+    private int[] EnsureReviewVerificationStudyItems(int subjectId)
+    {
+        var reviewTagId = _database.AddTag("×××-×¡×©×Ÿ");
+        var items = _database.GetStudyItemsForSubject(subjectId)
+            .Where(item => item.Topic.StartsWith("×›×¨×˜×™×¡ ×¡×©×Ÿ", StringComparison.Ordinal))
+            .ToList();
+
+        while (items.Count < 4)
+        {
+            var nextNumber = items.Count + 1;
+            _database.AddStudyItem(
+                subjectId,
+                $"×›×¨×˜×™×¡ ×¡×©×Ÿ {nextNumber}",
+                $"×©××œ×ª ××™×ž×•×ª {nextNumber} ×¢×œ ×”×¤×¡×•×§ ×”× ×‘×—×¨",
+                $"×ª×©×•×‘×ª ××™×ž×•×ª {nextNumber} ×œ×¦×•×¨×š ×¡×©×Ÿ ×—×–×¨×”",
+                nextNumber <= 2 ? StudyDifficulty.Hard : StudyDifficulty.Medium);
+            items = _database.GetStudyItemsForSubject(subjectId)
+                .Where(item => item.Topic.StartsWith("×›×¨×˜×™×¡ ×¡×©×Ÿ", StringComparison.Ordinal))
+                .ToList();
+        }
+
+        foreach (var item in items.Take(4))
+        {
+            _database.SetTagsForStudyItem(item.Id, [reviewTagId]);
+        }
+
+        return items
+            .OrderBy(item => item.Topic, StringComparer.Ordinal)
+            .Take(4)
+            .Select(item => item.Id)
+            .ToArray();
+    }
+
+    private int[] EnsureCoreVerificationStudyItems(int subjectId, int searchTagId, int hardTagId)
+    {
+        var items = _database.GetStudyItemsForSubject(subjectId).ToList();
+        if (items.Count < 3)
+        {
+            _database.AddStudyItem(subjectId, "×›×¨×˜×™×¡ ××™×ž×•×ª 1", "××™×ž×•×ª×—×™×¤×•×© ×©××œ×” ×¢×œ ×”×¤×¡×•×§ ×”× ×‘×—×¨", "×ª×©×•×‘×ª ×‘×“×™×§×” ×¨××©×•× ×”");
+            _database.AddStudyItem(subjectId, "×›×¨×˜×™×¡ ××™×ž×•×ª 2", "×›×¨×˜×™×¡ ×ž×¡×•×ž×Ÿ ×›×§×©×” ×œ×‘×“×™×§×”", "×ª×©×•×‘×ª ×‘×“×™×§×” ×©× ×™×™×”");
+            _database.AddStudyItem(subjectId, "×›×¨×˜×™×¡ ××™×ž×•×ª 3", "×›×¨×˜×™×¡ × ×•×¡×£ ×œ×¦×•×ž×ª ×”×¡×¤×¨×™×™×”", "×ª×©×•×‘×ª ×‘×“×™×§×” ×©×œ×™×©×™×ª");
+            items = _database.GetStudyItemsForSubject(subjectId).ToList();
+        }
+
+        var item1 = items.First();
+        var item2 = items.Skip(1).FirstOrDefault() ?? item1;
+        var item3 = items.Skip(2).FirstOrDefault() ?? item2;
+
+        _database.UpdateStudyItem(item2.Id, item2.SubjectId, item2.Topic, "××™×ž×•×ª×ž×ª×§×“× ×§×©×” ×œ×—×™×¤×•×© ×ž×ª×§×“×", item2.Answer, StudyDifficulty.Hard);
+        _database.SetTagsForStudyItem(item1.Id, [searchTagId]);
+        _database.SetTagsForStudyItem(item2.Id, [hardTagId]);
+        _database.SetTagsForStudyItem(item3.Id, [searchTagId, hardTagId]);
+
+        _database.RateStudyItem(item2.Id, ReviewRating.Again);
+        _database.RateStudyItem(item2.Id, ReviewRating.Again);
+
+        return [item1.Id, item2.Id, item3.Id];
+    }
+
+    private async Task ExpandNodeAsync(TreeNode node, ICollection<string> expandedPaths)
+    {
+        _subjectTreeView.SelectedNode = node;
+        node.EnsureVisible();
+        node.Expand();
+        await Task.Delay(500);
+
+        if (node.Nodes.Count == 1 && node.Nodes[0].Text == DummyNodeText)
+        {
+            if (!TryPopulateTreeChildren(node))
+            {
+                throw new InvalidOperationException($"×œ× × ×™×ª×Ÿ ×”×™×” ×œ×”×¨×—×™×‘ ××ª '{node.Text}'.");
+            }
+        }
+
+        expandedPaths.Add(BuildTreePath(node));
+    }
+
+    private void SaveTanakhVerificationReport(string reportPath, string overviewScreenshotPath, string detailScreenshotPath, IReadOnlyCollection<string> expandedPaths, Exception? failure)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(reportPath)!);
+        var requests = _database.GetSefariaRequestLog()
+            .Select(entry => new { entry.Endpoint, entry.Success, entry.Transport, entry.Message })
+            .ToArray();
+
+        var payload = new
+        {
+            Success = failure is null,
+            FailureMessage = failure?.Message,
+            OverviewScreenshot = overviewScreenshotPath,
+            DetailScreenshot = detailScreenshotPath,
+            ExpandedPaths = expandedPaths.ToArray(),
+            FetchWorked = requests.Any(entry => entry.Success && entry.Transport is "httpclient" or "node"),
+            Requests = requests
+        };
+
+        var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+        File.WriteAllText(reportPath, json);
+    }
+
+    private void CaptureWindowScreenshot(string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        TopMost = true;
+        BringToFront();
+        Activate();
+        Refresh();
+        Application.DoEvents();
+
+        using var bitmap = new Bitmap(Width, Height);
+        DrawToBitmap(bitmap, new Rectangle(Point.Empty, Size));
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+        TopMost = false;
+    }
+
+    private static void CaptureControlScreenshot(Control control, string path)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(path)!);
+        control.Refresh();
+        Application.DoEvents();
+        using var bitmap = new Bitmap(control.Width, control.Height);
+        control.DrawToBitmap(bitmap, new Rectangle(Point.Empty, control.Size));
+        bitmap.Save(path, System.Drawing.Imaging.ImageFormat.Png);
+    }
+
+    private static TreeNode? FindNodeByText(TreeNodeCollection nodes, string text)
+    {
+        foreach (TreeNode node in nodes)
+        {
+            if (string.Equals(node.Text, text, StringComparison.Ordinal))
+            {
+                return node;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? FindChildNodeByText(TreeNode parentNode, string text)
+    {
+        foreach (TreeNode child in parentNode.Nodes)
+        {
+            if (string.Equals(child.Text, text, StringComparison.Ordinal))
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static TreeNode? GetFirstRealChild(TreeNode parentNode)
+    {
+        foreach (TreeNode child in parentNode.Nodes)
+        {
+            if (!string.Equals(child.Text, DummyNodeText, StringComparison.Ordinal))
+            {
+                return child;
+            }
+        }
+
+        return null;
+    }
+
+    private static string BuildTreePath(TreeNode node)
+    {
+        var segments = new Stack<string>();
+        TreeNode? current = node;
+        while (current is not null)
+        {
+            segments.Push(current.Text);
+            current = current.Parent;
+        }
+
+        return string.Join(" / ", segments);
+    }
+
+    private static void AppendVerificationLog(string logPath, string message)
+    {
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+
+    private static void AppendStartupLog(string message)
+    {
+        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\startup-trace.log";
+        Directory.CreateDirectory(Path.GetDirectoryName(logPath)!);
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+}
+
+internal enum MainWorkspaceMode
+{
+    Questions,
+    Tags,
+    Search,
+    Review,
+    ReviewSession,
+    Status
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\Models.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public enum LibraryNodeType
+{
+    Generic = 0,
+    Category = 1,
+    Section = 2,
+    Book = 3,
+    Chapter = 4,
+    Verse = 5,
+    Page = 6
+}
+
+public sealed class SubjectNodeModel
+{
+    public int Id { get; init; }
+    public int? ParentId { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public string DisplayPath { get; init; } = string.Empty;
+    public int SortOrder { get; init; }
+    public bool HasChildren { get; init; }
+    public LibraryNodeType NodeType { get; init; } = LibraryNodeType.Generic;
+    public string SourceSystem { get; init; } = string.Empty;
+    public string SourceKey { get; init; } = string.Empty;
+}
+
+public sealed class StudyItemModel
+{
+    public int Id { get; init; }
+    public int SubjectId { get; init; }
+    public string SubjectPath { get; init; } = string.Empty;
+    public string RootCategory { get; init; } = string.Empty;
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public DateTime CreatedAt { get; init; }
+    public DateTime ModifiedAt { get; init; }
+    public DateTime DueDate { get; init; }
+    public int Level { get; init; }
+    public int TotalReviews { get; init; }
+    public int RepetitionCount { get; init; }
+    public int Lapses { get; init; }
+    public double EaseFactor { get; init; }
+    public double IntervalDays { get; init; }
+    public string LastRating { get; init; } = string.Empty;
+    public DateTime? LastReviewedAt { get; init; }
+    public string ManualDifficulty { get; init; } = string.Empty;
+    public List<TagModel> Tags { get; init; } = new();
+    public bool IsDue => DueDate.Date <= DateTime.Today;
+    public bool IsMastered => IntervalDays >= 30 || RepetitionCount >= 5;
+    public StudyDifficulty Difficulty => StudyDifficultyClassifier.Resolve(ManualDifficulty, EaseFactor, Lapses, LastRating);
+}
+
+public enum ReviewRating
+{
+    Again = 0,
+    Hard = 1,
+    Good = 2,
+    Easy = 3,
+    Perfect = 4
+}
+
+public sealed class ReviewResult
+{
+    public int NextLevel { get; init; }
+    public int NextRepetitionCount { get; init; }
+    public int NextLapses { get; init; }
+    public double NextEaseFactor { get; init; }
+    public double NextIntervalDays { get; init; }
+    public DateTime NextDueDate { get; init; }
+    public bool IsSuccessful { get; init; }
+}
+
+public sealed class SubjectCountModel
+{
+    public string Name { get; init; } = string.Empty;
+    public int Count { get; init; }
+}
+
+public sealed class ReviewTimelinePoint
+{
+    public DateTime Day { get; init; }
+    public double AverageScore { get; init; }
+    public int ReviewCount { get; init; }
+}
+
+public sealed class HeatmapDayModel
+{
+    public DateTime Day { get; init; }
+    public int ReviewCount { get; init; }
+}
+
+public sealed class TagModel
+{
+    public int Id { get; init; }
+    public string Name { get; init; } = string.Empty;
+    public int UsageCount { get; init; }
+
+    public override string ToString() => Name;
+}
+
+public enum StudyDifficulty
+{
+    Any = 0,
+    Easy = 1,
+    Medium = 2,
+    Hard = 3
+}
+
+public sealed class StudySearchQuery
+{
+    public string SearchText { get; init; } = string.Empty;
+    public string Book { get; init; } = string.Empty;
+    public string Chapter { get; init; } = string.Empty;
+    public string Verse { get; init; } = string.Empty;
+    public int? SubjectId { get; init; }
+    public int? TagId { get; init; }
+    public bool LimitToSelectedNode { get; init; }
+    public bool FailedRecentlyOnly { get; init; }
+    public StudyDifficulty Difficulty { get; init; } = StudyDifficulty.Any;
+}
+
+public sealed class StudyReviewFilter
+{
+    public int? SubjectId { get; init; }
+    public int? TagId { get; init; }
+    public bool RestrictToSelectedNode { get; init; }
+    public bool DueOnly { get; init; } = true;
+    public bool FailedRecentlyOnly { get; init; }
+    public StudyDifficulty Difficulty { get; init; } = StudyDifficulty.Any;
+}
+
+public sealed class DashboardStats
+{
+    public int TotalItems { get; init; }
+    public int DueToday { get; init; }
+    public int CompletedToday { get; init; }
+    public int MasteredItems { get; init; }
+    public double RetentionRate { get; init; }
+    public List<SubjectCountModel> ItemsBySubject { get; init; } = new();
+    public List<SubjectCountModel> DueBySubject { get; init; } = new();
+    public List<SubjectCountModel> MasteredByCategory { get; init; } = new();
+    public List<ReviewTimelinePoint> ReviewTimeline { get; init; } = new();
+    public List<HeatmapDayModel> Heatmap { get; init; } = new();
+}
+
+public sealed class ReviewHistoryModel
+{
+    public DateTime ReviewedAt { get; init; }
+    public ReviewRating Rating { get; init; }
+    public bool WasSuccessful { get; init; }
+}
+
+public sealed class ReviewSessionProgress
+{
+    public int TotalCount { get; init; }
+    public int CompletedCount { get; init; }
+    public int FailedCount { get; init; }
+    public int RemainingCount { get; init; }
+}
+
+public sealed class ReviewSessionSummary
+{
+    public string Title { get; init; } = string.Empty;
+    public int TotalCount { get; init; }
+    public int CompletedCount { get; init; }
+    public int FailedCount { get; init; }
+    public int HighRatingCount { get; init; }
+    public int LowRatingCount { get; init; }
+    public int RemainingCount { get; init; }
+    public List<int> FailedItemIds { get; init; } = new();
+}
+
+public sealed class PrintableScheduleItem
+{
+    public string SubjectPath { get; init; } = string.Empty;
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public DateTime DueDate { get; init; }
+}
+
+public sealed record SefariaBookInfo(string EnglishTitle, string HebrewTitle);
+
+public sealed record TanakhBookShape(string EnglishTitle, string HebrewTitle, IReadOnlyList<int> VerseCountsByChapter);
+
+public static class StudyDifficultyClassifier
+{
+    public static StudyDifficulty Resolve(string manualDifficulty, double easeFactor, int lapses, string lastRating)
+    {
+        if (Enum.TryParse<StudyDifficulty>(manualDifficulty, true, out var parsed) && parsed != StudyDifficulty.Any)
+        {
+            return parsed;
+        }
+
+        return Classify(easeFactor, lapses, lastRating);
+    }
+
+    public static StudyDifficulty Classify(double easeFactor, int lapses, string lastRating)
+    {
+        if (lapses >= 2 || easeFactor < 2.2 || lastRating is "Again" or "Hard")
+        {
+            return StudyDifficulty.Hard;
+        }
+
+        if (lapses >= 1 || easeFactor < 2.45)
+        {
+            return StudyDifficulty.Medium;
+        }
+
+        return StudyDifficulty.Easy;
+    }
+}
+
+public sealed class CsvImportPreviewRow
+{
+    public int RowNumber { get; init; }
+    public string Topic { get; init; } = string.Empty;
+    public string Question { get; init; } = string.Empty;
+    public string Answer { get; init; } = string.Empty;
+    public string SubjectPath { get; init; } = string.Empty;
+    public string Difficulty { get; init; } = string.Empty;
+    public string Tags { get; init; } = string.Empty;
+    public bool IsValid { get; init; }
+    public string Reason { get; init; } = string.Empty;
+}
+
+public sealed class CsvImportPreviewResult
+{
+    public List<CsvImportPreviewRow> Rows { get; init; } = new();
+    public int AcceptedCount { get; init; }
+    public int RejectedCount { get; init; }
+}
+
+public enum CsvFieldType
+{
+    Ignore = 0,
+    Topic = 1,
+    Question = 2,
+    Answer = 3,
+    Book = 4,
+    Chapter = 5,
+    Verse = 6,
+    Difficulty = 7,
+    Tags = 8
+}
+
+public sealed class CsvImportMapping
+{
+    public Dictionary<int, CsvFieldType> ColumnMappings { get; init; } = new();
+    public int? FallbackSubjectId { get; init; }
+    public bool HasHeaderRow { get; init; } = true;
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\Program.cs
+========================================================================================================================
+using System.Drawing;
+using System.Text;
+
+namespace TrackerApp;
+
+internal static class Program
+{
+    [STAThread]
+    private static void Main(string[] args)
+    {
+        Application.SetUnhandledExceptionMode(UnhandledExceptionMode.CatchException);
+        Application.ThreadException += (_, args) => ShowFatalError(args.Exception);
+        AppDomain.CurrentDomain.UnhandledException += (_, args) =>
+        {
+            var exception = args.ExceptionObject as Exception
+                ?? new Exception(args.ExceptionObject?.ToString() ?? "Unknown unhandled exception.");
+            ShowFatalError(exception);
+        };
+
+        try
+        {
+            File.AppendAllText(
+                "C:\\CodexProjects\\Tracker\\artifacts\\program-args.log",
+                $"[{DateTime.Now:HH:mm:ss}] args={string.Join(" | ", args)}{Environment.NewLine}");
+            AppendProgramLog("Main entered");
+
+            ToolStripManager.RenderMode = ToolStripManagerRenderMode.System;
+            Application.SetHighDpiMode(HighDpiMode.SystemAware);
+            Application.SetCompatibleTextRenderingDefault(false);
+            Application.SetDefaultFont(new Font("Microsoft Sans Serif", 8.25F, FontStyle.Regular, GraphicsUnit.Point));
+
+            using var database = new AppDatabase();
+            AppendProgramLog("AppDatabase created");
+            database.Initialize();
+            AppendProgramLog("AppDatabase initialized");
+
+            TanakhVerificationRequest? verificationRequest = null;
+            CoreVerificationRequest? coreVerificationRequest = null;
+            ManagementVerificationRequest? managementVerificationRequest = null;
+            ReviewVerificationRequest? reviewVerificationRequest = null;
+            if (TryParseTanakhVerificationArgs(args, out var overviewScreenshotPath, out var detailScreenshotPath, out var reportPath))
+            {
+                verificationRequest = new TanakhVerificationRequest(
+                    overviewScreenshotPath,
+                    detailScreenshotPath,
+                    reportPath);
+            }
+            else if (TryParseCoreVerificationArgs(args, out var searchScreenshotPath, out var tagsScreenshotPath, out var reviewScreenshotPath, out var treeScreenshotPath, out var coreReportPath))
+            {
+                coreVerificationRequest = new CoreVerificationRequest(
+                    searchScreenshotPath,
+                    tagsScreenshotPath,
+                    reviewScreenshotPath,
+                    treeScreenshotPath,
+                    coreReportPath);
+            }
+            else if (TryParseManagementVerificationArgs(args, out var importScreenshotPath, out var dialogScreenshotPath, out var advancedSearchScreenshotPath, out var bulkScreenshotPath, out var managementReportPath))
+            {
+                managementVerificationRequest = new ManagementVerificationRequest(
+                    importScreenshotPath,
+                    dialogScreenshotPath,
+                    advancedSearchScreenshotPath,
+                    bulkScreenshotPath,
+                    managementReportPath);
+            }
+            else if (TryParseReviewVerificationArgs(args, out var reviewSessionScreenshotPath, out var reviewSummaryScreenshotPath, out var reviewReportPath))
+            {
+                reviewVerificationRequest = new ReviewVerificationRequest(
+                    reviewSessionScreenshotPath,
+                    reviewSummaryScreenshotPath,
+                    reviewReportPath);
+            }
+
+            var form = new MainForm(database, verificationRequest, coreVerificationRequest, managementVerificationRequest, reviewVerificationRequest);
+            AppendProgramLog("MainForm created");
+
+            Application.Run(form);
+            AppendProgramLog("Application.Run finished");
+        }
+        catch (Exception exception)
+        {
+            AppendProgramLog($"Fatal exception: {exception}");
+            ShowFatalError(exception);
+        }
+    }
+
+    private static void AppendProgramLog(string message)
+    {
+        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\program-trace.log";
+        File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
+    }
+
+    private static void ShowFatalError(Exception exception)
+    {
+        var builder = new StringBuilder();
+        builder.AppendLine("Application Error");
+        builder.AppendLine();
+        builder.AppendLine(exception.Message);
+        builder.AppendLine();
+        builder.AppendLine(exception.StackTrace ?? "(no stack trace)");
+
+        if (exception.InnerException is not null)
+        {
+            builder.AppendLine();
+            builder.AppendLine("Inner Exception:");
+            builder.AppendLine(exception.InnerException.Message);
+            builder.AppendLine();
+            builder.AppendLine(exception.InnerException.StackTrace ?? "(no inner stack trace)");
+        }
+
+        MessageBox.Show(
+            builder.ToString(),
+            "TrackerApp Error",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Error,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+
+        Environment.Exit(1);
+    }
+
+    private static bool TryParseTanakhVerificationArgs(
+        IReadOnlyList<string> args,
+        out string overviewScreenshotPath,
+        out string detailScreenshotPath,
+        out string reportPath)
+    {
+        overviewScreenshotPath = string.Empty;
+        detailScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 4 || !string.Equals(args[0], "--tanakh-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        overviewScreenshotPath = args[1];
+        detailScreenshotPath = args[2];
+        reportPath = args[3];
+        return true;
+    }
+
+    private static bool TryParseCoreVerificationArgs(
+        IReadOnlyList<string> args,
+        out string searchScreenshotPath,
+        out string tagsScreenshotPath,
+        out string reviewScreenshotPath,
+        out string treeScreenshotPath,
+        out string reportPath)
+    {
+        searchScreenshotPath = string.Empty;
+        tagsScreenshotPath = string.Empty;
+        reviewScreenshotPath = string.Empty;
+        treeScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 6 || !string.Equals(args[0], "--core-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        searchScreenshotPath = args[1];
+        tagsScreenshotPath = args[2];
+        reviewScreenshotPath = args[3];
+        treeScreenshotPath = args[4];
+        reportPath = args[5];
+        return true;
+    }
+
+    private static bool TryParseManagementVerificationArgs(
+        IReadOnlyList<string> args,
+        out string importScreenshotPath,
+        out string dialogScreenshotPath,
+        out string advancedSearchScreenshotPath,
+        out string bulkScreenshotPath,
+        out string reportPath)
+    {
+        importScreenshotPath = string.Empty;
+        dialogScreenshotPath = string.Empty;
+        advancedSearchScreenshotPath = string.Empty;
+        bulkScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 6 || !string.Equals(args[0], "--management-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        importScreenshotPath = args[1];
+        dialogScreenshotPath = args[2];
+        advancedSearchScreenshotPath = args[3];
+        bulkScreenshotPath = args[4];
+        reportPath = args[5];
+        return true;
+    }
+
+    private static bool TryParseReviewVerificationArgs(
+        IReadOnlyList<string> args,
+        out string reviewSessionScreenshotPath,
+        out string reviewSummaryScreenshotPath,
+        out string reportPath)
+    {
+        reviewSessionScreenshotPath = string.Empty;
+        reviewSummaryScreenshotPath = string.Empty;
+        reportPath = string.Empty;
+
+        if (args.Count != 4 || !string.Equals(args[0], "--review-verify", StringComparison.OrdinalIgnoreCase))
+        {
+            return false;
+        }
+
+        reviewSessionScreenshotPath = args[1];
+        reviewSummaryScreenshotPath = args[2];
+        reportPath = args[3];
+        return true;
+    }
+}
+
+public sealed record TanakhVerificationRequest(
+    string OverviewScreenshotPath,
+    string DetailScreenshotPath,
+    string ReportPath);
+
+public sealed record CoreVerificationRequest(
+    string SearchScreenshotPath,
+    string TagsScreenshotPath,
+    string ReviewScreenshotPath,
+    string TreeScreenshotPath,
+    string ReportPath);
+
+public sealed record ManagementVerificationRequest(
+    string ImportScreenshotPath,
+    string CardDialogScreenshotPath,
+    string AdvancedSearchScreenshotPath,
+    string BulkScreenshotPath,
+    string ReportPath);
+
+public sealed record ReviewVerificationRequest(
+    string SessionScreenshotPath,
+    string SummaryScreenshotPath,
+    string ReportPath);
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\ReviewSessionControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class ReviewSessionControl : UserControl
+{
+    private readonly TableLayoutPanel _contentRoot = new();
+    private readonly Label _titleLabel = new();
+    private readonly Label _progressLabel = new();
+    private readonly Label _topicLabel = new();
+    private readonly Label _pathLabel = new();
+    private readonly Label _metaLabel = new();
+    private readonly Label _questionTextLabel = new();
+    private readonly TextBox _answerTextBox = new();
+    private readonly Panel _answerPanel = new();
+    private readonly Button _showAnswerButton = new();
+    private readonly FlowLayoutPanel _ratingButtonsPanel = new();
+    private readonly Panel _summaryPanel = new();
+    private readonly Label _summaryTitleLabel = new();
+    private readonly Label _summaryStatsLabel = new();
+    private readonly Label _summaryHintLabel = new();
+    private readonly Button _retryFailedButton = new();
+    private readonly Button _closeSummaryButton = new();
+    private readonly Button _abortSessionButton = new();
+
+    private bool _answerVisible;
+
+    public event EventHandler? RevealAnswerRequested;
+    public event EventHandler<ReviewRating>? RatingRequested;
+    public event EventHandler? RetryFailedRequested;
+    public event EventHandler? CloseRequested;
+    public event EventHandler? AbortRequested;
+
+    public ReviewSessionControl()
+    {
+        Dock = DockStyle.Fill;
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        TabStop = true;
+        BuildLayout();
+        ShowIdleState();
+    }
+
+    public bool IsSummaryVisible => _summaryPanel.Visible;
+    public bool IsAnswerVisible => _answerVisible;
+
+    public void ShowReviewItem(StudyItemModel item, ReviewSessionProgress progress, string sessionTitle)
+    {
+        _contentRoot.Visible = true;
+        _summaryPanel.Visible = false;
+        _titleLabel.Text = sessionTitle;
+        _progressLabel.Text = $"×¡×”\"×›: {progress.TotalCount} | ×”×•×©×œ×ž×•: {progress.CompletedCount} | × ×›×©×œ×•: {progress.FailedCount} | × ×©××¨×•: {progress.RemainingCount}";
+        _topicLabel.Text = item.Topic;
+        _pathLabel.Text = item.SubjectPath.Replace(" > ", " / ", StringComparison.Ordinal);
+        _metaLabel.Text = $"×©×œ×‘: {item.Level} | ×§×•×©×™: {TranslateDifficulty(item.Difficulty)} | ×œ×‘×™×¦×•×¢: {item.DueDate:dd/MM/yyyy}";
+        _questionTextLabel.Text = item.Question;
+        _answerTextBox.Text = item.Answer;
+        SetAnswerVisible(false);
+        Visible = true;
+        FocusForReview();
+    }
+
+    public void ShowSummary(ReviewSessionSummary summary)
+    {
+        _contentRoot.Visible = false;
+        _summaryPanel.Visible = true;
+        _summaryTitleLabel.Text = summary.Title;
+        _summaryStatsLabel.Text =
+            $"×¡×”\"×› ×›×¨×˜×™×¡×™×: {summary.TotalCount}{Environment.NewLine}" +
+            $"×”×•×©×œ×ž×•: {summary.CompletedCount}{Environment.NewLine}" +
+            $"× ×›×©×œ×•: {summary.FailedCount}{Environment.NewLine}" +
+            $"×“×•×¨×’×• ×’×‘×•×”: {summary.HighRatingCount}{Environment.NewLine}" +
+            $"×“×•×¨×’×• × ×ž×•×š: {summary.LowRatingCount}{Environment.NewLine}" +
+            $"× ×©××¨×•: {summary.RemainingCount}";
+        _summaryHintLabel.Text = summary.FailedCount > 0
+            ? "××¤×©×¨ ×œ×”×¤×¢×™×œ ×¢×›×©×™×• ×¡×©×Ÿ × ×•×¡×£ ×¨×§ ×¢×œ ×”×›×¨×˜×™×¡×™× ×©× ×›×©×œ×•."
+            : "××™×Ÿ ×›×¨×˜×™×¡×™× ×©× ×›×©×œ×• ×‘×¡×©×Ÿ ×”×–×”.";
+        _retryFailedButton.Visible = summary.FailedCount > 0;
+        _titleLabel.Text = summary.Title;
+        _progressLabel.Text = $"×”×¡×©×Ÿ ×”×¡×ª×™×™× | ×”×•×©×œ×ž×•: {summary.CompletedCount} | × ×›×©×œ×•: {summary.FailedCount}";
+        FocusForReview();
+    }
+
+    public void RevealAnswer()
+    {
+        SetAnswerVisible(true);
+        FocusForReview();
+    }
+
+    public void ShowIdleState()
+    {
+        _contentRoot.Visible = true;
+        _summaryPanel.Visible = false;
+        _titleLabel.Text = "×ž×¡×š ×—×–×¨×”";
+        _progressLabel.Text = "×‘×—×¨×• ×¡×©×Ÿ ×—×–×¨×” ×¨×’×™×œ ××• ×—×–×¨×” ×¢×œ ×›×¨×˜×™×¡×™× × ×‘×—×¨×™×.";
+        _topicLabel.Text = "××™×Ÿ ×¡×©×Ÿ ×¤×¢×™×œ";
+        _pathLabel.Text = string.Empty;
+        _metaLabel.Text = "×¨×•×•×— ××• Enter ×œ×”×¦×’×ª ×ª×©×•×‘×”, ×ž×¡×¤×¨×™× 1-5 ×œ×“×™×¨×•×’, Esc ×œ×¡×™×•× ×ž×•×§×“×.";
+        _questionTextLabel.Text = "×¤×ª×—×• ×—×–×¨×” ×™×•×ž×™×ª/×ž×¡×•× × ×ª ××• ×”×¤×¢×™×œ×• ×—×–×¨×” ×¢×œ ×›×¨×˜×™×¡×™× ×©× ×‘×—×¨×•.";
+        _answerTextBox.Text = string.Empty;
+        SetAnswerVisible(false);
+    }
+
+    public bool HandleShortcut(Keys keyData)
+    {
+        if (!Visible)
+        {
+            return false;
+        }
+
+        if (_summaryPanel.Visible)
+        {
+            if ((keyData == Keys.Enter || keyData == Keys.Space) && _retryFailedButton.Visible)
+            {
+                RetryFailedRequested?.Invoke(this, EventArgs.Empty);
+                return true;
+            }
+
+            if (keyData == Keys.Escape)
+            {
+                CloseRequested?.Invoke(this, EventArgs.Empty);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (!_answerVisible && (keyData == Keys.Space || keyData == Keys.Enter))
+        {
+            RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        if (_answerVisible)
+        {
+            if (TryMapRatingShortcut(keyData, out var rating))
+            {
+                RatingRequested?.Invoke(this, rating);
+                return true;
+            }
+        }
+
+        if (keyData == Keys.Escape)
+        {
+            AbortRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        return false;
+    }
+
+    public void AutomationRevealAnswer()
+    {
+        if (!_answerVisible)
+        {
+            RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void AutomationRate(ReviewRating rating)
+    {
+        if (_answerVisible)
+        {
+            RatingRequested?.Invoke(this, rating);
+        }
+    }
+
+    public void FocusForReview()
+    {
+        Select();
+        Focus();
+    }
+
+    private void BuildLayout()
+    {
+        _contentRoot.Dock = DockStyle.Fill;
+        _contentRoot.ColumnCount = 1;
+        _contentRoot.RowCount = 5;
+        _contentRoot.Padding = new Padding(12);
+        _contentRoot.BackColor = ClassicPalette.PanelBackground;
+        _contentRoot.RightToLeft = RightToLeft.Yes;
+
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 76F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 70F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Percent, 55F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Percent, 45F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 74F));
+
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.Teal,
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _abortSessionButton.Text = "×¡×™×•× ×ž×•×§×“×";
+        _abortSessionButton.Dock = DockStyle.Left;
+        _abortSessionButton.Width = 120;
+        _abortSessionButton.Click += (_, _) => AbortRequested?.Invoke(this, EventArgs.Empty);
+
+        var titleStack = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            RightToLeft = RightToLeft.Yes
+        };
+        titleStack.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        titleStack.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+
+        _titleLabel.Dock = DockStyle.Fill;
+        _titleLabel.ForeColor = Color.White;
+        _titleLabel.Font = new Font("Microsoft Sans Serif", 14F, FontStyle.Bold);
+        _titleLabel.TextAlign = ContentAlignment.MiddleRight;
+
+        _progressLabel.Dock = DockStyle.Fill;
+        _progressLabel.ForeColor = Color.White;
+        _progressLabel.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Bold);
+        _progressLabel.TextAlign = ContentAlignment.MiddleRight;
+
+        titleStack.Controls.Add(_titleLabel, 0, 0);
+        titleStack.Controls.Add(_progressLabel, 0, 1);
+
+        headerPanel.Controls.Add(titleStack);
+        headerPanel.Controls.Add(_abortSessionButton);
+
+        var detailsPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            BackColor = ClassicPalette.CardBackground,
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
+            RightToLeft = RightToLeft.Yes
+        };
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 24F));
+
+        ConfigureDetailLabel(_topicLabel, new Font("Microsoft Sans Serif", 12F, FontStyle.Bold));
+        ConfigureDetailLabel(_pathLabel, new Font("Microsoft Sans Serif", 9.5F, FontStyle.Regular));
+        ConfigureDetailLabel(_metaLabel, new Font("Microsoft Sans Serif", 9F, FontStyle.Regular));
+
+        detailsPanel.Controls.Add(_topicLabel, 0, 0);
+        detailsPanel.Controls.Add(_pathLabel, 0, 1);
+        detailsPanel.Controls.Add(_metaLabel, 0, 2);
+
+        var questionPanel = CreateTextPanel("×©××œ×”", out var questionBodyHost);
+        _questionTextLabel.Dock = DockStyle.Fill;
+        _questionTextLabel.BackColor = Color.White;
+        _questionTextLabel.BorderStyle = BorderStyle.FixedSingle;
+        _questionTextLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        _questionTextLabel.TextAlign = ContentAlignment.TopRight;
+        _questionTextLabel.Padding = new Padding(12);
+        _questionTextLabel.RightToLeft = RightToLeft.Yes;
+        questionBodyHost.Controls.Add(_questionTextLabel);
+
+        var answerOuterPanel = CreateTextPanel("×ª×©×•×‘×”", out var answerBodyHost);
+        _answerPanel.Dock = DockStyle.Fill;
+        _answerPanel.RightToLeft = RightToLeft.Yes;
+
+        _answerTextBox.Dock = DockStyle.Fill;
+        _answerTextBox.Multiline = true;
+        _answerTextBox.ReadOnly = true;
+        _answerTextBox.ScrollBars = ScrollBars.Vertical;
+        _answerTextBox.BorderStyle = BorderStyle.FixedSingle;
+        _answerTextBox.BackColor = Color.White;
+        _answerTextBox.Font = new Font("Microsoft Sans Serif", 12F, FontStyle.Regular);
+        _answerTextBox.RightToLeft = RightToLeft.Yes;
+
+        _answerPanel.Controls.Add(_answerTextBox);
+        answerBodyHost.Controls.Add(_answerPanel);
+
+        var actionsPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(10),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var keyboardHintLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 22,
+            Text = "×§×™×¦×•×¨×™×: ×¨×•×•×—/Enter ×œ×”×¦×’×ª ×ª×©×•×‘×” | 1 ×’×¨×•×¢ | 2 ×—×œ×© | 3 ×‘×¡×“×¨ | 4 ×˜×•×‘ | 5 ×ž×¦×•×™×Ÿ | Esc ×œ×¡×™×•× ×ž×•×§×“×",
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _showAnswerButton.Text = "×”×¦×’ ×ª×©×•×‘×”";
+        _showAnswerButton.Width = 130;
+        _showAnswerButton.Height = 34;
+        _showAnswerButton.Click += (_, _) => RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+
+        _ratingButtonsPanel.Dock = DockStyle.Fill;
+        _ratingButtonsPanel.FlowDirection = FlowDirection.RightToLeft;
+        _ratingButtonsPanel.WrapContents = false;
+        _ratingButtonsPanel.RightToLeft = RightToLeft.Yes;
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("5 ×ž×¦×•×™×Ÿ", ReviewRating.Perfect, Color.FromArgb(202, 222, 240)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("4 ×˜×•×‘", ReviewRating.Easy, Color.FromArgb(206, 232, 234)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("3 ×‘×¡×“×¨", ReviewRating.Good, Color.FromArgb(221, 235, 210)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("2 ×—×œ×©", ReviewRating.Hard, Color.FromArgb(240, 228, 204)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("1 ×’×¨×•×¢", ReviewRating.Again, Color.FromArgb(241, 216, 208)));
+
+        var actionButtonsPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            RightToLeft = RightToLeft.Yes
+        };
+        actionButtonsPanel.Controls.Add(_ratingButtonsPanel);
+        actionButtonsPanel.Controls.Add(_showAnswerButton);
+
+        actionsPanel.Controls.Add(actionButtonsPanel);
+        actionsPanel.Controls.Add(keyboardHintLabel);
+
+        BuildSummaryPanel();
+
+        _contentRoot.Controls.Add(headerPanel, 0, 0);
+        _contentRoot.Controls.Add(detailsPanel, 0, 1);
+        _contentRoot.Controls.Add(questionPanel, 0, 2);
+        _contentRoot.Controls.Add(answerOuterPanel, 0, 3);
+        _contentRoot.Controls.Add(actionsPanel, 0, 4);
+
+        Controls.Add(_summaryPanel);
+        Controls.Add(_contentRoot);
+    }
+
+    private void BuildSummaryPanel()
+    {
+        _summaryPanel.Dock = DockStyle.Fill;
+        _summaryPanel.BackColor = ClassicPalette.PanelBackground;
+        _summaryPanel.Visible = false;
+        _summaryPanel.Padding = new Padding(18);
+        _summaryPanel.RightToLeft = RightToLeft.Yes;
+
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = ClassicPalette.CardBackground,
+            Padding = new Padding(16),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _summaryTitleLabel.Dock = DockStyle.Top;
+        _summaryTitleLabel.Height = 44;
+        _summaryTitleLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        _summaryTitleLabel.TextAlign = ContentAlignment.MiddleRight;
+        _summaryTitleLabel.BackColor = ClassicPalette.Teal;
+        _summaryTitleLabel.ForeColor = Color.White;
+
+        _summaryStatsLabel.Dock = DockStyle.Fill;
+        _summaryStatsLabel.Font = new Font("Microsoft Sans Serif", 13F, FontStyle.Bold);
+        _summaryStatsLabel.TextAlign = ContentAlignment.TopRight;
+        _summaryStatsLabel.Padding = new Padding(12);
+        _summaryStatsLabel.RightToLeft = RightToLeft.Yes;
+
+        _summaryHintLabel.Dock = DockStyle.Top;
+        _summaryHintLabel.Height = 36;
+        _summaryHintLabel.TextAlign = ContentAlignment.MiddleRight;
+        _summaryHintLabel.RightToLeft = RightToLeft.Yes;
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 44,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = false,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _retryFailedButton.Text = "×¡×©×Ÿ × ×•×¡×£ ×¢×œ ×”× ×›×©×œ×™×";
+        _retryFailedButton.Width = 170;
+        _retryFailedButton.Height = 32;
+        _retryFailedButton.Click += (_, _) => RetryFailedRequested?.Invoke(this, EventArgs.Empty);
+
+        _closeSummaryButton.Text = "×—×–×¨×” ×œ×ž×¡×š ×”×§×•×“×";
+        _closeSummaryButton.Width = 170;
+        _closeSummaryButton.Height = 32;
+        _closeSummaryButton.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+        actions.Controls.Add(_retryFailedButton);
+        actions.Controls.Add(_closeSummaryButton);
+
+        card.Controls.Add(_summaryStatsLabel);
+        card.Controls.Add(_summaryHintLabel);
+        card.Controls.Add(actions);
+        card.Controls.Add(_summaryTitleLabel);
+        _summaryPanel.Controls.Add(card);
+    }
+
+    private Button CreateRatingButton(string text, ReviewRating rating, Color backColor)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 104,
+            Height = 34,
+            BackColor = backColor
+        };
+        button.Click += (_, _) => RatingRequested?.Invoke(this, rating);
+        return button;
+    }
+
+    private static Panel CreateTextPanel(string caption, out Panel bodyHost)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = caption,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        bodyHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(0),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        panel.Controls.Add(bodyHost);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private void SetAnswerVisible(bool isVisible)
+    {
+        _answerVisible = isVisible;
+        _answerPanel.Visible = isVisible;
+        _showAnswerButton.Enabled = !isVisible;
+        foreach (Control control in _ratingButtonsPanel.Controls)
+        {
+            control.Enabled = isVisible;
+        }
+    }
+
+    private static bool TryMapRatingShortcut(Keys keyData, out ReviewRating rating)
+    {
+        switch (keyData)
+        {
+            case Keys.D1:
+            case Keys.NumPad1:
+                rating = ReviewRating.Again;
+                return true;
+            case Keys.D2:
+            case Keys.NumPad2:
+                rating = ReviewRating.Hard;
+                return true;
+            case Keys.D3:
+            case Keys.NumPad3:
+                rating = ReviewRating.Good;
+                return true;
+            case Keys.D4:
+            case Keys.NumPad4:
+                rating = ReviewRating.Easy;
+                return true;
+            case Keys.D5:
+            case Keys.NumPad5:
+                rating = ReviewRating.Perfect;
+                return true;
+            default:
+                rating = ReviewRating.Good;
+                return false;
+        }
+    }
+
+    private static void ConfigureDetailLabel(Label label, Font font)
+    {
+        label.Dock = DockStyle.Fill;
+        label.Font = font;
+        label.TextAlign = ContentAlignment.MiddleRight;
+        label.RightToLeft = RightToLeft.Yes;
+        label.Padding = new Padding(8, 0, 8, 0);
+    }
+
+    private static string TranslateDifficulty(StudyDifficulty difficulty)
+    {
+        return difficulty switch
+        {
+            StudyDifficulty.Easy => "×§×œ×”",
+            StudyDifficulty.Medium => "×‘×™× ×•× ×™×ª",
+            StudyDifficulty.Hard => "×§×©×”",
+            _ => "×œ×œ×"
+        };
+    }
+}
+
+

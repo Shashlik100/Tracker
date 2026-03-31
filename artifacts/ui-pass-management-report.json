@@ -1,0 +1,14 @@
+{
+  "ImportPreviewAccepted": 1,
+  "ImportPreviewRejected": 0,
+  "ImportedCount": 1,
+  "AdvancedSearchResults": 1,
+  "BulkSelectedCount": 8,
+  "TagsAfterRun": 6,
+  "Success": true,
+  "Failure": null,
+  "ImportScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-import.png",
+  "CardDialogScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-card-dialog.png",
+  "AdvancedSearchScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-advanced-search.png",
+  "BulkScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-pass-bulk.png"
+}

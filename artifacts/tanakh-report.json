@@ -1,0 +1,61 @@
+{
+  "Success": true,
+  "FailureMessage": null,
+  "OverviewScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\tanakh-overview.png",
+  "DetailScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\tanakh-detail.png",
+  "ExpandedPaths": [
+    "\u05EA\u05E0\u0022\u05DA",
+    "\u05EA\u05E0\u0022\u05DA / \u05EA\u05D5\u05E8\u05D4",
+    "\u05EA\u05E0\u0022\u05DA / \u05E0\u05D1\u05D9\u05D0\u05D9\u05DD",
+    "\u05EA\u05E0\u0022\u05DA / \u05DB\u05EA\u05D5\u05D1\u05D9\u05DD",
+    "\u05EA\u05E0\u0022\u05DA / \u05EA\u05D5\u05E8\u05D4 / \u05D5\u05D9\u05E7\u05E8\u05D0",
+    "\u05EA\u05E0\u0022\u05DA / \u05E0\u05D1\u05D9\u05D0\u05D9\u05DD / \u05D9\u05D5\u05E0\u05D4",
+    "\u05EA\u05E0\u0022\u05DA / \u05DB\u05EA\u05D5\u05D1\u05D9\u05DD / \u05E8\u05D5\u05EA",
+    "\u05EA\u05E0\u0022\u05DA / \u05EA\u05D5\u05E8\u05D4 / \u05D5\u05D9\u05E7\u05E8\u05D0 / \u05E4\u05E8\u05E7 \u05D0"
+  ],
+  "FetchWorked": false,
+  "Requests": [
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Leviticus",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jonah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Ruth",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/v3/texts/Leviticus%201",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    }
+  ]
+}

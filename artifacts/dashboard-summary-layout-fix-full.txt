@@ -1,0 +1,373 @@
+﻿========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\DailyDashboardControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class DailyDashboardControl : UserControl
+{
+    private readonly Label _dueTodayLabel = new();
+    private readonly Label _overdueLabel = new();
+    private readonly Label _newLabel = new();
+    private readonly Label _failedLabel = new();
+    private readonly Label _reviewLaterLabel = new();
+    private readonly Label _pausedLabel = new();
+    private readonly Label _unitsStudiedLabel = new();
+    private readonly Label _unitsWaitingLabel = new();
+    private readonly Label _unitsDueLabel = new();
+    private readonly Label _unitsFailedLabel = new();
+    private readonly Label _unitsCompletedLabel = new();
+    private readonly Label _unitsSelectedNodeLabel = new();
+    private readonly ListBox _presetListBox = new();
+    private readonly DataGridView _weakSpotsGrid = new();
+    private readonly ComboBox _tagQueueComboBox = new();
+
+    public event EventHandler? DailyReviewRequested;
+    public event EventHandler? ResumeRequested;
+    public event EventHandler? FailedRequested;
+    public event EventHandler? HardRequested;
+    public event EventHandler? FilteredRequested;
+    public event EventHandler? OverdueRequested;
+    public event EventHandler? NewRequested;
+    public event EventHandler? ReviewLaterRequested;
+    public event EventHandler? SelectedNodeRequested;
+    public event EventHandler? UnitDueRequested;
+    public event EventHandler? UnitFailedRequested;
+    public event EventHandler? SelectedUnitRequested;
+    public event EventHandler<int?>? TagQueueRequested;
+    public event EventHandler? AddPresetRequested;
+    public event EventHandler<ReviewPresetModel>? EditPresetRequested;
+    public event EventHandler<ReviewPresetModel>? DeletePresetRequested;
+    public event EventHandler<ReviewPresetModel>? RunPresetRequested;
+
+    public DailyDashboardControl()
+    {
+        Dock = DockStyle.Fill;
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        AutoScroll = false;
+        BuildLayout();
+        UiLayoutHelper.ApplyRecursive(this);
+    }
+
+    public ReviewPresetModel? SelectedPreset => _presetListBox.SelectedItem as ReviewPresetModel;
+    public int? SelectedTagId => _tagQueueComboBox.SelectedItem is TagChoice choice && choice.Id.HasValue ? choice.Id.Value : null;
+    public int WeakSpotCount => _weakSpotsGrid.Rows.Count;
+
+    public void AutomationSelectFirstPreset()
+    {
+        if (_presetListBox.Items.Count > 0)
+        {
+            _presetListBox.SelectedIndex = 0;
+        }
+    }
+
+    public void AutomationSelectFirstWeakSpot()
+    {
+        if (_weakSpotsGrid.Rows.Count <= 0)
+        {
+            return;
+        }
+
+        _weakSpotsGrid.ClearSelection();
+        _weakSpotsGrid.Rows[0].Selected = true;
+        if (_weakSpotsGrid.Columns.Count > 0)
+        {
+            _weakSpotsGrid.CurrentCell = _weakSpotsGrid.Rows[0].Cells[0];
+        }
+    }
+
+    public void Bind(DailyDashboardModel model, IReadOnlyList<ReviewPresetModel> presets, IReadOnlyList<WeakSpotModel> weakSpots, IReadOnlyList<TagModel> tags)
+    {
+        _dueTodayLabel.Text = model.DueTodayCount.ToString();
+        _overdueLabel.Text = model.OverdueCount.ToString();
+        _newLabel.Text = model.NewCount.ToString();
+        _failedLabel.Text = model.FailedRecentlyCount.ToString();
+        _reviewLaterLabel.Text = model.ReviewLaterCount.ToString();
+        _pausedLabel.Text = model.HasPausedSession ? "×›×Ÿ" : "×œ×";
+        _unitsStudiedLabel.Text = model.UnitsStudiedTodayCount.ToString();
+        _unitsWaitingLabel.Text = model.UnitsWaitingCount.ToString();
+        _unitsDueLabel.Text = model.UnitsDueCount.ToString();
+        _unitsFailedLabel.Text = model.UnitsFailedCount.ToString();
+        _unitsCompletedLabel.Text = model.UnitsCompletedCycleCount.ToString();
+        _unitsSelectedNodeLabel.Text = model.UnitsForSelectedNodeCount.ToString();
+
+        _presetListBox.BeginUpdate();
+        _presetListBox.Items.Clear();
+        foreach (var preset in presets)
+        {
+            _presetListBox.Items.Add(preset);
+        }
+        _presetListBox.EndUpdate();
+        if (_presetListBox.Items.Count > 0 && _presetListBox.SelectedIndex < 0)
+        {
+            _presetListBox.SelectedIndex = 0;
+        }
+
+        var selectedTagId = SelectedTagId;
+        _tagQueueComboBox.Items.Clear();
+        _tagQueueComboBox.Items.Add(new TagChoice(null, "×‘×—×¨ ×ª×’×™×ª"));
+        foreach (var tag in tags)
+        {
+            _tagQueueComboBox.Items.Add(new TagChoice(tag.Id, tag.Name));
+        }
+        _tagQueueComboBox.SelectedIndex = 0;
+        if (selectedTagId.HasValue)
+        {
+            for (var index = 0; index < _tagQueueComboBox.Items.Count; index++)
+            {
+                if (_tagQueueComboBox.Items[index] is TagChoice choice && choice.Id == selectedTagId)
+                {
+                    _tagQueueComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+
+        _weakSpotsGrid.Rows.Clear();
+        foreach (var weakSpot in weakSpots)
+        {
+            _weakSpotsGrid.Rows.Add(
+                weakSpot.Kind,
+                weakSpot.Name,
+                $"{weakSpot.LowRatingPercent:0.#}%",
+                weakSpot.FailureCount,
+                weakSpot.OverdueCount,
+                weakSpot.ItemCount);
+        }
+    }
+
+    private void BuildLayout()
+    {
+        var scrollHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = ClassicPalette.PanelBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            RowCount = 3,
+            Padding = new Padding(8),
+            RightToLeft = RightToLeft.Yes,
+            Height = 760,
+            MinimumSize = new Size(0, 760)
+        };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60F));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 244F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 264F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        var summaryPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 6,
+            RowCount = 2,
+            Padding = new Padding(4, 4, 4, 8)
+        };
+        for (var index = 0; index < 6; index++)
+        {
+            summaryPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
+        }
+        summaryPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 110F));
+        summaryPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 110F));
+        summaryPanel.Controls.Add(CreateSummaryBox("×œ×”×™×•×", _dueTodayLabel), 0, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×‘××™×—×•×¨", _overdueLabel), 1, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×—×“×©×™×", _newLabel), 2, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("× ×›×©×œ×• ×œ××—×¨×•× ×”", _failedLabel), 3, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×œ×¢×™×•×Ÿ ×—×•×–×¨", _reviewLaterLabel), 4, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×¡×©×Ÿ ×ž×•×©×”×”", _pausedLabel), 5, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("× ×œ×ž×“×• ×”×™×•×", _unitsStudiedLabel), 0, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×™×—×™×“×•×ª ×ž×ž×ª×™× ×•×ª", _unitsWaitingLabel), 1, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×™×—×™×“×•×ª ×œ×‘×™×¦×•×¢", _unitsDueLabel), 2, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×™×—×™×“×•×ª ×—×œ×©×•×ª", _unitsFailedLabel), 3, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×ž×—×–×•×¨ ×”×•×©×œ×", _unitsCompletedLabel), 4, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×‘×¦×•×ž×ª ×”× ×‘×—×¨", _unitsSelectedNodeLabel), 5, 1);
+
+        var queuePanel = new GroupBox
+        {
+            Text = "×ª×•×¨×™× ×—×›×ž×™×",
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        var queueLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 7,
+            Padding = new Padding(8),
+            RightToLeft = RightToLeft.Yes
+        };
+        queueLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        queueLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        for (var index = 0; index < 7; index++)
+        {
+            queueLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        }
+
+        queueLayout.Controls.Add(CreateActionButton("×”×ª×—×œ ×—×–×¨×” ×™×•×ž×™×ª", (_, _) => DailyReviewRequested?.Invoke(this, EventArgs.Empty)), 0, 0);
+        queueLayout.Controls.Add(CreateActionButton("×”×ž×©×š ×¡×©×Ÿ ×ž×•×©×”×”", (_, _) => ResumeRequested?.Invoke(this, EventArgs.Empty)), 1, 0);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ × ×›×©×œ×™×", (_, _) => FailedRequested?.Invoke(this, EventArgs.Empty)), 0, 1);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ ×§×©×™×", (_, _) => HardRequested?.Invoke(this, EventArgs.Empty)), 1, 1);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ ×—×“×©×™×", (_, _) => NewRequested?.Invoke(this, EventArgs.Empty)), 0, 2);
+        queueLayout.Controls.Add(CreateActionButton("×ž×¡×•×ž× ×™× ×œ×¢×™×•×Ÿ ×—×•×–×¨", (_, _) => ReviewLaterRequested?.Invoke(this, EventArgs.Empty)), 1, 2);
+        queueLayout.Controls.Add(CreateActionButton("×œ×¤×™ ×”×¦×•×ž×ª ×”× ×‘×—×¨", (_, _) => SelectedNodeRequested?.Invoke(this, EventArgs.Empty)), 0, 3);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ ×‘××™×—×•×¨", (_, _) => OverdueRequested?.Invoke(this, EventArgs.Empty)), 1, 3);
+        queueLayout.Controls.Add(CreateActionButton("×¤×ª×— ×—×–×¨×” ×ž×¡×•× × ×ª", (_, _) => FilteredRequested?.Invoke(this, EventArgs.Empty)), 0, 4);
+        queueLayout.Controls.Add(CreateActionButton("×™×—×™×“×•×ª ×©×”×’×™×¢ ×–×ž× ×Ÿ", (_, _) => UnitDueRequested?.Invoke(this, EventArgs.Empty)), 0, 5);
+        queueLayout.Controls.Add(CreateActionButton("×™×—×™×“×•×ª ×—×œ×©×•×ª", (_, _) => UnitFailedRequested?.Invoke(this, EventArgs.Empty)), 1, 5);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×ª ×™×—×™×“×” × ×‘×—×¨×ª", (_, _) => SelectedUnitRequested?.Invoke(this, EventArgs.Empty)), 0, 6);
+        queuePanel.Controls.Add(queueLayout);
+
+        var presetPanel = new GroupBox
+        {
+            Text = "×¤×¨×™×¡×˜×™× ×©×ž×•×¨×™×",
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        var presetLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(8),
+            RightToLeft = RightToLeft.Yes
+        };
+        presetLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54F));
+        presetLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        presetLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));
+
+        var tagQueuePanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes
+        };
+        _tagQueueComboBox.Width = 150;
+        _tagQueueComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        tagQueuePanel.Controls.Add(CreateActionButton("×—×–×¨×” ×œ×¤×™ ×ª×’×™×ª", (_, _) => TagQueueRequested?.Invoke(this, SelectedTagId)));
+        tagQueuePanel.Controls.Add(_tagQueueComboBox);
+
+        _presetListBox.Dock = DockStyle.Fill;
+        _presetListBox.IntegralHeight = false;
+
+        var presetButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes
+        };
+        presetButtons.Controls.Add(CreateActionButton("×”×¤×¢×œ", (_, _) => { if (SelectedPreset is not null) RunPresetRequested?.Invoke(this, SelectedPreset); }));
+        presetButtons.Controls.Add(CreateActionButton("×—×“×©", (_, _) => AddPresetRequested?.Invoke(this, EventArgs.Empty)));
+        presetButtons.Controls.Add(CreateActionButton("×¢×¨×•×š", (_, _) => { if (SelectedPreset is not null) EditPresetRequested?.Invoke(this, SelectedPreset); }));
+        presetButtons.Controls.Add(CreateActionButton("×ž×—×§", (_, _) => { if (SelectedPreset is not null) DeletePresetRequested?.Invoke(this, SelectedPreset); }));
+
+        presetLayout.Controls.Add(tagQueuePanel, 0, 0);
+        presetLayout.Controls.Add(_presetListBox, 0, 1);
+        presetLayout.Controls.Add(presetButtons, 0, 2);
+        presetPanel.Controls.Add(presetLayout);
+
+        var weakSpotsPanel = new GroupBox
+        {
+            Text = "× ×§×•×“×•×ª ×—×•×œ×©×”",
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        _weakSpotsGrid.Dock = DockStyle.Fill;
+        _weakSpotsGrid.AllowUserToAddRows = false;
+        _weakSpotsGrid.AllowUserToDeleteRows = false;
+        _weakSpotsGrid.ReadOnly = true;
+        _weakSpotsGrid.RowHeadersVisible = false;
+        _weakSpotsGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        _weakSpotsGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _weakSpotsGrid.RightToLeft = RightToLeft.Yes;
+        UiLayoutHelper.StyleDataGridView(_weakSpotsGrid);
+        _weakSpotsGrid.Columns.Add("Kind", "×¡×•×’");
+        _weakSpotsGrid.Columns.Add("Name", "×©×");
+        _weakSpotsGrid.Columns.Add("LowRatingPercent", "% ×“×™×¨×•×’ × ×ž×•×š");
+        _weakSpotsGrid.Columns.Add("FailureCount", "×›×©×œ×•× ×•×ª");
+        _weakSpotsGrid.Columns.Add("OverdueCount", "×‘××™×—×•×¨");
+        _weakSpotsGrid.Columns.Add("ItemCount", "×›×¨×˜×™×¡×™×");
+        var weakSpotsBody = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(6),
+            BackColor = ClassicPalette.CardBackground
+        };
+        weakSpotsBody.Controls.Add(_weakSpotsGrid);
+        weakSpotsPanel.Controls.Add(weakSpotsBody);
+
+        root.Controls.Add(summaryPanel, 0, 0);
+        root.SetColumnSpan(summaryPanel, 2);
+        root.Controls.Add(queuePanel, 0, 1);
+        root.Controls.Add(presetPanel, 1, 1);
+        root.Controls.Add(weakSpotsPanel, 0, 2);
+        root.SetColumnSpan(weakSpotsPanel, 2);
+        scrollHost.Controls.Add(root);
+        Controls.Add(scrollHost);
+    }
+
+    private static Control CreateSummaryBox(string title, Label valueLabel)
+    {
+        valueLabel.Dock = DockStyle.Fill;
+        valueLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        valueLabel.TextAlign = ContentAlignment.MiddleCenter;
+        valueLabel.RightToLeft = RightToLeft.Yes;
+        valueLabel.Margin = new Padding(0);
+
+        var box = new GroupBox
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground,
+            Margin = Padding.Empty,
+            Padding = new Padding(8, 18, 8, 8),
+            MinimumSize = new Size(0, 96)
+        };
+        box.Controls.Add(valueLabel);
+        UiLayoutHelper.ApplyRecursive(box);
+
+        var host = new GroupBoxHostPanel();
+        host.Controls.Add(box);
+        return host;
+    }
+
+    private static Button CreateActionButton(string text, EventHandler onClick)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 194,
+            Height = 38,
+            Margin = new Padding(4)
+        };
+        UiLayoutHelper.StyleActionButton(button, 160, 38);
+        button.Click += onClick;
+        return button;
+    }
+
+    private sealed record TagChoice(int? Id, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    private sealed class GroupBoxHostPanel : Panel
+    {
+        public GroupBoxHostPanel()
+        {
+            Dock = DockStyle.Fill;
+            Margin = new Padding(4, 4, 4, 8);
+            Padding = new Padding(0, 0, 0, 2);
+            BackColor = Color.Transparent;
+        }
+    }
+}

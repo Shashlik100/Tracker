@@ -1,0 +1,14 @@
+{
+  "ImportPreviewAccepted": 1,
+  "ImportPreviewRejected": 0,
+  "ImportedCount": 1,
+  "AdvancedSearchResults": 1,
+  "BulkSelectedCount": 5,
+  "TagsAfterRun": 3,
+  "Success": true,
+  "Failure": null,
+  "ImportScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\management-import.png",
+  "CardDialogScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\management-card-dialog.png",
+  "AdvancedSearchScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\management-advanced-search.png",
+  "BulkScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\management-bulk.png"
+}

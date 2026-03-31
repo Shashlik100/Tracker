@@ -1,0 +1,18 @@
+{
+  "SeededItemIds": [
+    4,
+    10,
+    9
+  ],
+  "SelectedPath": "\u05EA\u05E0\u0022\u05DA\\\u05EA\u05D5\u05E8\u05D4\\\u05D1\u05E8\u05D0\u05E9\u05D9\u05EA\\\u05E4\u05E8\u05E7 \u05D0\\\u05E4\u05E1\u05D5\u05E7 \u05D0",
+  "SearchTagId": 5,
+  "HardTagId": 6,
+  "SearchResults": 0,
+  "ReviewResults": 2,
+  "Success": true,
+  "Failure": null,
+  "SearchScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\bottom-actions-search.png",
+  "TagsScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\bottom-actions-tags.png",
+  "ReviewScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\bottom-actions-review-filter.png",
+  "TreeScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\bottom-actions-card.png"
+}

@@ -1,0 +1,40 @@
+{
+  "Success": true,
+  "DatabasePath": "C:\\CodexProjects\\.user\\AppData\\Local\\TrackerApp\\tracker.db",
+  "ResetReportPath": "C:\\CodexProjects\\Tracker\\artifacts\\fresh-start-reset-hebrew.md",
+  "SafetyBackupPath": "C:\\CodexProjects\\.user\\AppData\\Local\\TrackerApp\\backups\\tracker-20260331-130013-reset-user-data.db",
+  "PreservedRoots": [
+    "\u05EA\u05E0\u0022\u05DA",
+    "\u05DE\u05E9\u05E0\u05D4",
+    "\u05E8\u05DE\u05D1\u0022\u05DD",
+    "\u05D8\u05D5\u05E8",
+    "\u05E9\u05D5\u05DC\u05D7\u05DF \u05E2\u05E8\u05D5\u05DA",
+    "\u05EA\u05DC\u05DE\u05D5\u05D3"
+  ],
+  "PreservedSubjectCount": 97,
+  "LibraryRootCount": 6,
+  "StudyItemCount": 0,
+  "TagCount": 0,
+  "PresetCount": 0,
+  "TrackedUnitCount": 0,
+  "HasPausedSession": false,
+  "ReviewHistoryCount": 0,
+  "StudyUnitHistoryCount": 0,
+  "DashboardSummary": {
+    "DueTodayCount": 0,
+    "OverdueCount": 0,
+    "NewCount": 0,
+    "FailedRecentlyCount": 0,
+    "ReviewLaterCount": 0,
+    "HasPausedSession": false,
+    "UnitsStudiedTodayCount": 0,
+    "UnitsWaitingCount": 0,
+    "UnitsDueCount": 0,
+    "UnitsFailedCount": 0,
+    "UnitsCompletedCycleCount": 0,
+    "UnitsForSelectedNodeCount": 0
+  },
+  "SelectedPath": "\u05EA\u05E0\u0022\u05DA / \u05EA\u05D5\u05E8\u05D4 / \u05D1\u05E8\u05D0\u05E9\u05D9\u05EA / \u05E4\u05E8\u05E7 \u05D0 / \u05E4\u05E1\u05D5\u05E7 \u05D0",
+  "MainScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\fresh-start-main.png",
+  "DashboardScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\fresh-start-dashboard.png"
+}

@@ -1,0 +1,18 @@
+{
+  "ItemIds": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "TotalItems": 4,
+  "OrderMode": "Random",
+  "PausedSessionSaved": true,
+  "RemainingAfterResume": 4,
+  "SkippedCount": 1,
+  "ReviewLaterCount": 1,
+  "Success": true,
+  "Failure": null,
+  "SessionScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-broad-review-session.png",
+  "ResumeScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-broad-review-resume.png"
+}

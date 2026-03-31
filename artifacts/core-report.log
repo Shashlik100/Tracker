@@ -1,0 +1,11 @@
+[20:21:55] Microsoft.Data.Sqlite.SqliteException (0x80004005): SQLite Error 1: 'unrecognized token: "1ORDER"'.
+   at Microsoft.Data.Sqlite.SqliteException.ThrowExceptionForRC(Int32 rc, sqlite3 db)
+   at Microsoft.Data.Sqlite.SqliteCommand.PrepareAndEnumerateStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteCommand.GetStatements()+MoveNext()
+   at Microsoft.Data.Sqlite.SqliteDataReader.NextResult()
+   at Microsoft.Data.Sqlite.SqliteCommand.ExecuteReader(CommandBehavior behavior)
+   at TrackerApp.AppDatabase.LoadStudyItems(SqliteConnection connection, SqliteCommand command) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.StudyFeatures.cs:line 307
+   at TrackerApp.AppDatabase.SearchStudyItems(StudySearchQuery query) in C:\CodexProjects\Tracker\TrackerApp\AppDatabase.StudyFeatures.cs:line 241
+   at TrackerApp.MainForm.RunSearch() in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 523
+   at TrackerApp.MainForm.ShowSearchView() in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 473
+   at TrackerApp.MainForm.RunCoreVerificationAsync(CoreVerificationRequest request) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 1193

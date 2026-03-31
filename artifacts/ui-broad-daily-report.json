@@ -1,0 +1,15 @@
+{
+  "DueToday": 6,
+  "Overdue": 4,
+  "NewCount": 4,
+  "FailedRecently": 2,
+  "ReviewLaterCount": 1,
+  "HasPausedSession": false,
+  "PresetCount": 2,
+  "WeakSpotCount": 12,
+  "Success": true,
+  "Failure": null,
+  "DashboardScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-broad-dashboard.png",
+  "QueuesScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-broad-queues.png",
+  "WeakSpotsScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\ui-broad-weakspots.png"
+}

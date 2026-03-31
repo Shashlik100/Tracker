@@ -1,0 +1,937 @@
+{
+  "RootCount": 3,
+  "LoadedSubjectCount": 67,
+  "TanakhSectionCount": 3,
+  "TanakhBookCount": 39,
+  "TanakhChapterCount": 929,
+  "TanakhVerseCount": 23206,
+  "TalmudCollectionCount": 2,
+  "TalmudSederCount": 11,
+  "TalmudTractateCount": 76,
+  "TalmudChapterCount": 618,
+  "TalmudPageCount": 5160,
+  "BavliSederCount": 6,
+  "BavliTractateCount": 37,
+  "BavliChapterCount": 321,
+  "BavliPageCount": 2949,
+  "YerushalmiSederCount": 5,
+  "YerushalmiTractateCount": 39,
+  "YerushalmiChapterCount": 297,
+  "YerushalmiHalakhahCount": 2211,
+  "MishnahSederCount": 6,
+  "MishnahTractateCount": 63,
+  "MishnahChapterCount": 525,
+  "MishnahUnitCount": 4192,
+  "DuplicateSiblingGroupCount": 0,
+  "CardsOnSelectedTalmudNode": 1,
+  "SelectedTreePath": "\u05EA\u05DC\u05DE\u05D5\u05D3 / \u05D9\u05E8\u05D5\u05E9\u05DC\u05DE\u05D9 / \u05E1\u05D3\u05E8 \u05D6\u05E8\u05E2\u05D9\u05DD / \u05D1\u05E8\u05DB\u05D5\u05EA / \u05E4\u05E8\u05E7 \u05D0 / \u05D4\u05DC\u05DB\u05D4 \u05D0",
+  "SelectedBavliPath": "\u05EA\u05DC\u05DE\u05D5\u05D3 / \u05D1\u05D1\u05DC\u05D9 / \u05E1\u05D3\u05E8 \u05D6\u05E8\u05E2\u05D9\u05DD / \u05D1\u05E8\u05DB\u05D5\u05EA / \u05E4\u05E8\u05E7 \u05D0 / \u05D3\u05E3 \u05D1",
+  "SelectedYerushalmiPath": "\u05EA\u05DC\u05DE\u05D5\u05D3 / \u05D9\u05E8\u05D5\u05E9\u05DC\u05DE\u05D9 / \u05E1\u05D3\u05E8 \u05D6\u05E8\u05E2\u05D9\u05DD / \u05D1\u05E8\u05DB\u05D5\u05EA / \u05E4\u05E8\u05E7 \u05D0 / \u05D4\u05DC\u05DB\u05D4 \u05D0",
+  "Audit": {
+    "ExistingRootsBefore": [
+      "\u05EA\u05E0\u0022\u05DA",
+      "\u05DE\u05E9\u05E0\u05D4",
+      "\u05EA\u05DC\u05DE\u05D5\u05D3"
+    ],
+    "AddedBranches": [],
+    "FixedIssues": [],
+    "CompletedBranches": [
+      "\u05E0\u05D1\u05D3\u05E7 \u05D5\u05D4\u05D5\u05D1\u05D8\u05D7 \u05DE\u05D1\u05E0\u05D4 \u05D1\u05E8\u05D9\u05E8\u05EA \u05D4\u05DE\u05D7\u05D3\u05DC \u05E9\u05DC \u05EA\u05E0\u0022\u05DA.",
+      "\u05E0\u05D5\u05E8\u05DE\u05DC \u05E9\u05D5\u05E8\u05E9 \u05D4\u05EA\u05DC\u05DE\u05D5\u05D3 \u05DC\u05DE\u05D1\u05E0\u05D4 \u05E7\u05E0\u05D5\u05E0\u05D9 \u05E9\u05DC \u05EA\u05DC\u05DE\u05D5\u05D3 \u003E \u05D1\u05D1\u05DC\u05D9 / \u05D9\u05E8\u05D5\u05E9\u05DC\u05DE\u05D9.",
+      "\u05D1\u05D1\u05DC\u05D9 \u05E2\u05D5\u05D3\u05DB\u05DF \u05DC\u05DE\u05D1\u05E0\u05D4 \u05E2\u05E7\u05D1\u05D9 \u05E9\u05DC \u05E1\u05D3\u05E8 \u003E \u05DE\u05E1\u05DB\u05EA \u003E \u05E4\u05E8\u05E7 \u003E \u05D3\u05E3 \u05E2\u05DD \u05D8\u05E2\u05D9\u05E0\u05D4 \u05E2\u05E6\u05DC\u05D4.",
+      "\u05D9\u05E8\u05D5\u05E9\u05DC\u05DE\u05D9 \u05E2\u05D5\u05D3\u05DB\u05DF \u05DC\u05DE\u05D1\u05E0\u05D4 \u05DE\u05E7\u05D5\u05E8-\u05DE\u05D5\u05E0\u05D7\u05D4 \u05E9\u05DC \u05E1\u05D3\u05E8 \u003E \u05DE\u05E1\u05DB\u05EA \u003E \u05E4\u05E8\u05E7 \u003E \u05D4\u05DC\u05DB\u05D4 \u05E2\u05DD \u05D8\u05E2\u05D9\u05E0\u05D4 \u05E2\u05E6\u05DC\u05D4.",
+      "\u05E0\u05D5\u05E1\u05E3 \u05E9\u05D5\u05E8\u05E9 \u05DE\u05E9\u05E0\u05D4 \u05DE\u05D5\u05DB\u05DF \u05DC\u05D8\u05E2\u05D9\u05E0\u05D4 \u05E2\u05E6\u05DC\u05D4 \u05E9\u05DC \u05E1\u05D3\u05E8\u05D9\u05DD, \u05DE\u05E1\u05DB\u05EA\u05D5\u05EA, \u05E4\u05E8\u05E7\u05D9\u05DD \u05D5\u05DE\u05E9\u05E0\u05D9\u05D5\u05EA."
+    ],
+    "RemainingLimitations": [
+      "\u05D1\u05D1\u05DC\u05D9 \u05E0\u05E9\u05E2\u05DF \u05E2\u05DC Sefaria \u05E2\u05D1\u05D5\u05E8 \u05D0\u05D5\u05E1\u05E4\u05D9\u05DD, \u05E1\u05D3\u05E8\u05D9\u05DD \u05D5\u05DE\u05E1\u05DB\u05EA\u05D5\u05EA, \u05D0\u05DA \u05D2\u05D1\u05D5\u05DC\u05D5\u05EA \u05E4\u05E8\u05E7\u05D9\u05DD-\u05D3\u05E4\u05D9\u05DD \u05E2\u05D3\u05D9\u05D9\u05DF \u05DE\u05D1\u05D5\u05E1\u05E1\u05D9\u05DD \u05E2\u05DC \u05DE\u05D9\u05E4\u05D5\u05D9 \u05E4\u05E0\u05D9\u05DE\u05D9 \u05DE\u05EA\u05D5\u05E7\u05E0\u05DF.",
+      "\u05D9\u05E8\u05D5\u05E9\u05DC\u05DE\u05D9 \u05E0\u05D8\u05E2\u05DF \u05DE-Sefaria \u05E2\u05D3 \u05E8\u05DE\u05EA \u05D4\u05DC\u05DB\u05D4; \u05DC\u05D0 \u05E0\u05D5\u05E1\u05E4\u05D4 \u05DB\u05E8\u05D2\u05E2 \u05E8\u05DE\u05EA \u05E1\u05D2\u05DE\u05E0\u05D8 \u05DB\u05D3\u05D9 \u05DC\u05E9\u05DE\u05D5\u05E8 \u05E2\u05DC \u05E2\u05E5 \u05E9\u05D9\u05DE\u05D5\u05E9\u05D9 \u05D5\u05DC\u05D0 \u05DB\u05D1\u05D3 \u05DE\u05D3\u05D9.",
+      "\u05E9\u05DC\u05DE\u05D5\u05EA \u05EA\u05E0\u0022\u05DA \u05D5\u05DE\u05E9\u05E0\u05D4 \u05DE\u05D0\u05D5\u05DE\u05EA\u05EA \u05DE\u05D5\u05DC Sefaria \u05D1\u05D6\u05DE\u05DF \u05D8\u05E2\u05D9\u05E0\u05D4/\u05D0\u05D9\u05DE\u05D5\u05EA \u05D5\u05DC\u05D0 \u05E0\u05D6\u05E8\u05E2\u05EA \u05DB\u05D5\u05DC\u05D4 \u05DE\u05E8\u05D0\u05E9 \u05DC\u05DE\u05E1\u05D3 \u05DB\u05D3\u05D9 \u05DC\u05E9\u05DE\u05D5\u05E8 \u05E2\u05DC \u05D1\u05D9\u05E6\u05D5\u05E2\u05D9\u05DD."
+    ],
+    "RenamedNodes": 0,
+    "DuplicateGroupsResolved": 0,
+    "MergedSubjects": 0,
+    "ReassignedStudyItems": 0,
+    "ReassignedPresets": 0
+  },
+  "Requests": [
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Genesis",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Exodus",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Leviticus",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Numbers",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Deuteronomy",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Joshua",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Judges",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/I%20Samuel",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/II%20Samuel",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/I%20Kings",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/II%20Kings",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Isaiah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jeremiah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Ezekiel",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Hosea",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Joel",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Amos",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Obadiah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jonah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Micah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Nahum",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Habakkuk",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Zephaniah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Haggai",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Zechariah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Malachi",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Psalms",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Proverbs",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Job",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Song%20of%20Songs",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Ruth",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Lamentations",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Ecclesiastes",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Esther",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Daniel",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Ezra",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Nehemiah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/I%20Chronicles",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/II%20Chronicles",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Berakhot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Peah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Demai",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Kilayim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Sheviit",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Terumot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Maasrot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Maaser%20Sheni",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Challah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Orlah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Bikkurim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Shabbat",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Eruvin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Pesachim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Shekalim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Yoma",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Sukkah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Beitzah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Rosh%20Hashanah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Ta%27anit",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Megillah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Moed%20Katan",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Chagigah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Yevamot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Ketubot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Nedarim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Nazir",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Sotah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Gittin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Kiddushin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Bava%20Kamma",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Bava%20Metzia",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Bava%20Batra",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Sanhedrin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Makkot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Shevuot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Eduyot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Avodah%20Zarah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Pirkei%20Avot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Horayot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Zevachim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Menachot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Chullin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Bekhorot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Arakhin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Temurah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Keritot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Meilah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Tamid",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Middot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Kinnim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Kelim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Oholot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Negaim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Parah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Tahorot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Mikvaot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Niddah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Makhshirin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Zavim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Tevul%20Yom",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Yadayim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Mishnah%20Oktzin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/index",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Berakhot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Peah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Demai",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Kilayim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Sheviit",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Terumot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Maasrot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Maaser%20Sheni",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Challah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Orlah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Bikkurim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Shabbat",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Eruvin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Pesachim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Yoma",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Shekalim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Sukkah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Rosh%20Hashanah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Beitzah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Taanit",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Megillah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Chagigah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Moed%20Katan",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Yevamot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Sotah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Ketubot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Nedarim",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Nazir",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Gittin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Kiddushin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Bava%20Kamma",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Bava%20Metzia",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Bava%20Batra",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Sanhedrin",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Shevuot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Avodah%20Zarah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Makkot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Horayot",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    },
+    {
+      "Endpoint": "api/shape/Jerusalem%20Talmud%20Niddah",
+      "Success": true,
+      "Transport": "cache",
+      "Message": "cache hit"
+    }
+  ],
+  "Success": true,
+  "Failure": null,
+  "Screenshot": "C:\\CodexProjects\\Tracker\\artifacts\\rambam-library-audit.png"
+}

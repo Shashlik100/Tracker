@@ -1,0 +1,12 @@
+{
+  "CardButtonRowVisible": true,
+  "CardWidth": 2514,
+  "CardHeight": 432,
+  "ReviewButtonRowVisible": true,
+  "ReviewWidth": 2606,
+  "ReviewHeight": 1511,
+  "Success": true,
+  "Failure": null,
+  "CardScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\bottom-actions-card-control.png",
+  "ReviewScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\bottom-actions-review-control.png"
+}

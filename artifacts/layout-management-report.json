@@ -1,0 +1,14 @@
+{
+  "ImportPreviewAccepted": 1,
+  "ImportPreviewRejected": 0,
+  "ImportedCount": 1,
+  "AdvancedSearchResults": 2,
+  "BulkSelectedCount": 9,
+  "TagsAfterRun": 6,
+  "Success": true,
+  "Failure": null,
+  "ImportScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\layout-import-fixed.png",
+  "CardDialogScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\layout-card-dialog-fixed.png",
+  "AdvancedSearchScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\layout-advanced-search-fixed.png",
+  "BulkScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\layout-bulk-fixed.png"
+}

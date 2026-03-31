@@ -1,0 +1,2567 @@
+﻿========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\UiLayoutHelper.cs
+========================================================================================================================
+namespace TrackerApp;
+
+internal static class UiLayoutHelper
+{
+    private static readonly Font BaseFont = new("Microsoft Sans Serif", 9.25F, FontStyle.Regular, GraphicsUnit.Point);
+    private static readonly Font BoldFont = new("Microsoft Sans Serif", 9.25F, FontStyle.Bold, GraphicsUnit.Point);
+
+    public static void ApplyFormDefaults(Form form)
+    {
+        form.AutoScaleMode = AutoScaleMode.Dpi;
+        form.Font = BaseFont;
+        form.RightToLeft = RightToLeft.Yes;
+        form.AutoScaleDimensions = new SizeF(96F, 96F);
+    }
+
+    public static void ApplyRecursive(Control root)
+    {
+        ApplyControlMetrics(root);
+        foreach (Control child in root.Controls)
+        {
+            ApplyRecursive(child);
+        }
+
+        if (root is ToolStrip strip)
+        {
+            ApplyToolStripMetrics(strip);
+        }
+    }
+
+    public static void StyleActionButton(Button button, int minWidth = 112, int minHeight = 38)
+    {
+        button.UseCompatibleTextRendering = true;
+        button.TextAlign = ContentAlignment.MiddleCenter;
+        button.TextImageRelation = TextImageRelation.ImageBeforeText;
+        button.Padding = new Padding(12, 5, 12, 5);
+        button.AutoEllipsis = false;
+        button.AutoSize = false;
+        button.Font = button.Font.Style.HasFlag(FontStyle.Bold) ? button.Font : BoldFont;
+        button.Height = Math.Max(button.Height, minHeight);
+        button.MinimumSize = new Size(Math.Max(minWidth, MeasureButtonWidth(button.Text, button.Font)), minHeight);
+        if (button.Dock == DockStyle.None && button.Width < button.MinimumSize.Width)
+        {
+            button.Width = button.MinimumSize.Width;
+        }
+    }
+
+    public static void StyleDataGridView(DataGridView grid)
+    {
+        grid.EnableHeadersVisualStyles = false;
+        grid.ColumnHeadersHeightSizeMode = DataGridViewColumnHeadersHeightSizeMode.DisableResizing;
+        grid.ColumnHeadersHeight = Math.Max(grid.ColumnHeadersHeight, 38);
+        grid.RowTemplate.Height = Math.Max(grid.RowTemplate.Height, 34);
+        grid.DefaultCellStyle.Padding = new Padding(4, 5, 4, 5);
+        grid.DefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
+        grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleCenter;
+        grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
+        grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
+        grid.RightToLeft = RightToLeft.Yes;
+        grid.Font = BaseFont;
+    }
+
+    public static int MeasureButtonWidth(string text, Font font, int extra = 28)
+    {
+        return TextRenderer.MeasureText(text, font, new Size(int.MaxValue, int.MaxValue), TextFormatFlags.RightToLeft | TextFormatFlags.SingleLine).Width + extra;
+    }
+
+    private static void ApplyControlMetrics(Control control)
+    {
+        control.RightToLeft = RightToLeft.Yes;
+        if (control.Font.Size < BaseFont.Size)
+        {
+            control.Font = BaseFont;
+        }
+
+        switch (control)
+        {
+            case Button button:
+                StyleActionButton(button, button.MinimumSize.Width > 0 ? button.MinimumSize.Width : 96);
+                break;
+            case Label label:
+                label.UseCompatibleTextRendering = true;
+                label.AutoEllipsis = false;
+                if (label.Dock == DockStyle.Top && label.Height < 26)
+                {
+                    label.Height = 26;
+                }
+                if (label.TextAlign == ContentAlignment.TopRight)
+                {
+                    label.Padding = new Padding(Math.Max(label.Padding.Left, 6), Math.Max(label.Padding.Top, 6), Math.Max(label.Padding.Right, 6), Math.Max(label.Padding.Bottom, 6));
+                }
+                break;
+            case GroupBox groupBox:
+                groupBox.Font = groupBox.Font.Style.HasFlag(FontStyle.Bold) ? groupBox.Font : BoldFont;
+                groupBox.Padding = new Padding(Math.Max(groupBox.Padding.Left, 8), Math.Max(groupBox.Padding.Top, 14), Math.Max(groupBox.Padding.Right, 8), Math.Max(groupBox.Padding.Bottom, 8));
+                break;
+            case DataGridView grid:
+                StyleDataGridView(grid);
+                break;
+            case ComboBox comboBox:
+                comboBox.Font = BaseFont;
+                comboBox.IntegralHeight = false;
+                if (comboBox.Height < 32)
+                {
+                    comboBox.Height = 32;
+                }
+                break;
+            case DateTimePicker dateTimePicker:
+                dateTimePicker.Font = BaseFont;
+                if (dateTimePicker.Height < 32)
+                {
+                    dateTimePicker.Height = 32;
+                }
+                break;
+            case TextBox textBox:
+                textBox.Font = BaseFont;
+                if (!textBox.Multiline && textBox.Height < 32)
+                {
+                    textBox.Height = 32;
+                }
+                break;
+            case CheckBox checkBox:
+                checkBox.Font = BaseFont;
+                checkBox.AutoSize = true;
+                checkBox.Padding = new Padding(Math.Max(checkBox.Padding.Left, 2), Math.Max(checkBox.Padding.Top, 4), Math.Max(checkBox.Padding.Right, 2), Math.Max(checkBox.Padding.Bottom, 4));
+                break;
+            case RadioButton radioButton:
+                radioButton.Font = BaseFont;
+                radioButton.AutoSize = true;
+                radioButton.Padding = new Padding(Math.Max(radioButton.Padding.Left, 2), Math.Max(radioButton.Padding.Top, 4), Math.Max(radioButton.Padding.Right, 2), Math.Max(radioButton.Padding.Bottom, 4));
+                break;
+            case CheckedListBox checkedListBox:
+                checkedListBox.Font = BaseFont;
+                checkedListBox.ItemHeight = Math.Max(checkedListBox.ItemHeight, 26);
+                break;
+            case ListBox listBox:
+                listBox.Font = BaseFont;
+                listBox.ItemHeight = Math.Max(listBox.ItemHeight, 26);
+                break;
+            case TreeView treeView:
+                treeView.Font = BaseFont;
+                treeView.ItemHeight = Math.Max(treeView.ItemHeight, 26);
+                break;
+            case SplitContainer splitContainer:
+                splitContainer.Dock = DockStyle.Fill;
+                splitContainer.Panel1MinSize = Math.Max(splitContainer.Panel1MinSize, 120);
+                splitContainer.Panel2MinSize = Math.Max(splitContainer.Panel2MinSize, 120);
+                splitContainer.SplitterWidth = Math.Max(splitContainer.SplitterWidth, 6);
+                break;
+            case TableLayoutPanel tableLayout:
+                tableLayout.Margin = new Padding(
+                    Math.Max(tableLayout.Margin.Left, 2),
+                    Math.Max(tableLayout.Margin.Top, 2),
+                    Math.Max(tableLayout.Margin.Right, 2),
+                    Math.Max(tableLayout.Margin.Bottom, 2));
+                break;
+            case FlowLayoutPanel flowPanel:
+                flowPanel.Padding = new Padding(
+                    Math.Max(flowPanel.Padding.Left, 2),
+                    Math.Max(flowPanel.Padding.Top, 2),
+                    Math.Max(flowPanel.Padding.Right, 2),
+                    Math.Max(flowPanel.Padding.Bottom, 2));
+                if (flowPanel.Controls.OfType<Button>().Count() >= 3)
+                {
+                    flowPanel.WrapContents = true;
+                    flowPanel.AutoScroll = false;
+                    flowPanel.Height = Math.Max(flowPanel.Height, 72);
+                }
+                break;
+        }
+    }
+
+    private static void ApplyToolStripMetrics(ToolStrip strip)
+    {
+        strip.Font = BaseFont;
+        strip.Padding = new Padding(Math.Max(strip.Padding.Left, 8), Math.Max(strip.Padding.Top, 9), Math.Max(strip.Padding.Right, 8), Math.Max(strip.Padding.Bottom, 9));
+        if (strip.AutoSize)
+        {
+            return;
+        }
+
+        strip.Height = Math.Max(strip.Height, 44);
+        foreach (ToolStripItem item in strip.Items)
+        {
+            item.RightToLeft = RightToLeft.Yes;
+            if (item is ToolStripButton button)
+            {
+                button.AutoSize = false;
+                button.Height = Math.Max(button.Height, 30);
+                button.Width = Math.Max(button.Width, MeasureButtonWidth(button.Text ?? string.Empty, button.Font));
+                button.Margin = new Padding(2, 2, 2, 2);
+            }
+            else if (item is ToolStripComboBox comboBox)
+            {
+                comboBox.AutoSize = false;
+                comboBox.Height = Math.Max(comboBox.Height, 30);
+            }
+            else if (item is ToolStripMenuItem menuItem)
+            {
+                menuItem.AutoSize = false;
+                menuItem.Height = Math.Max(menuItem.Height, 36);
+                menuItem.Width = Math.Max(menuItem.Width, MeasureButtonWidth(menuItem.Text ?? string.Empty, menuItem.Font, 36));
+            }
+        }
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\DailyDashboardControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class DailyDashboardControl : UserControl
+{
+    private readonly Label _dueTodayLabel = new();
+    private readonly Label _overdueLabel = new();
+    private readonly Label _newLabel = new();
+    private readonly Label _failedLabel = new();
+    private readonly Label _reviewLaterLabel = new();
+    private readonly Label _pausedLabel = new();
+    private readonly Label _unitsStudiedLabel = new();
+    private readonly Label _unitsWaitingLabel = new();
+    private readonly Label _unitsDueLabel = new();
+    private readonly Label _unitsFailedLabel = new();
+    private readonly Label _unitsCompletedLabel = new();
+    private readonly Label _unitsSelectedNodeLabel = new();
+    private readonly ListBox _presetListBox = new();
+    private readonly DataGridView _weakSpotsGrid = new();
+    private readonly ComboBox _tagQueueComboBox = new();
+
+    public event EventHandler? DailyReviewRequested;
+    public event EventHandler? ResumeRequested;
+    public event EventHandler? FailedRequested;
+    public event EventHandler? HardRequested;
+    public event EventHandler? FilteredRequested;
+    public event EventHandler? OverdueRequested;
+    public event EventHandler? NewRequested;
+    public event EventHandler? ReviewLaterRequested;
+    public event EventHandler? SelectedNodeRequested;
+    public event EventHandler? UnitDueRequested;
+    public event EventHandler? UnitFailedRequested;
+    public event EventHandler? SelectedUnitRequested;
+    public event EventHandler<int?>? TagQueueRequested;
+    public event EventHandler? AddPresetRequested;
+    public event EventHandler<ReviewPresetModel>? EditPresetRequested;
+    public event EventHandler<ReviewPresetModel>? DeletePresetRequested;
+    public event EventHandler<ReviewPresetModel>? RunPresetRequested;
+
+    public DailyDashboardControl()
+    {
+        Dock = DockStyle.Fill;
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        AutoScroll = false;
+        BuildLayout();
+        UiLayoutHelper.ApplyRecursive(this);
+    }
+
+    public ReviewPresetModel? SelectedPreset => _presetListBox.SelectedItem as ReviewPresetModel;
+    public int? SelectedTagId => _tagQueueComboBox.SelectedItem is TagChoice choice && choice.Id.HasValue ? choice.Id.Value : null;
+    public int WeakSpotCount => _weakSpotsGrid.Rows.Count;
+
+    public void AutomationSelectFirstPreset()
+    {
+        if (_presetListBox.Items.Count > 0)
+        {
+            _presetListBox.SelectedIndex = 0;
+        }
+    }
+
+    public void AutomationSelectFirstWeakSpot()
+    {
+        if (_weakSpotsGrid.Rows.Count <= 0)
+        {
+            return;
+        }
+
+        _weakSpotsGrid.ClearSelection();
+        _weakSpotsGrid.Rows[0].Selected = true;
+        if (_weakSpotsGrid.Columns.Count > 0)
+        {
+            _weakSpotsGrid.CurrentCell = _weakSpotsGrid.Rows[0].Cells[0];
+        }
+    }
+
+    public void Bind(DailyDashboardModel model, IReadOnlyList<ReviewPresetModel> presets, IReadOnlyList<WeakSpotModel> weakSpots, IReadOnlyList<TagModel> tags)
+    {
+        _dueTodayLabel.Text = model.DueTodayCount.ToString();
+        _overdueLabel.Text = model.OverdueCount.ToString();
+        _newLabel.Text = model.NewCount.ToString();
+        _failedLabel.Text = model.FailedRecentlyCount.ToString();
+        _reviewLaterLabel.Text = model.ReviewLaterCount.ToString();
+        _pausedLabel.Text = model.HasPausedSession ? "×›×Ÿ" : "×œ×";
+        _unitsStudiedLabel.Text = model.UnitsStudiedTodayCount.ToString();
+        _unitsWaitingLabel.Text = model.UnitsWaitingCount.ToString();
+        _unitsDueLabel.Text = model.UnitsDueCount.ToString();
+        _unitsFailedLabel.Text = model.UnitsFailedCount.ToString();
+        _unitsCompletedLabel.Text = model.UnitsCompletedCycleCount.ToString();
+        _unitsSelectedNodeLabel.Text = model.UnitsForSelectedNodeCount.ToString();
+
+        _presetListBox.BeginUpdate();
+        _presetListBox.Items.Clear();
+        foreach (var preset in presets)
+        {
+            _presetListBox.Items.Add(preset);
+        }
+        _presetListBox.EndUpdate();
+        if (_presetListBox.Items.Count > 0 && _presetListBox.SelectedIndex < 0)
+        {
+            _presetListBox.SelectedIndex = 0;
+        }
+
+        var selectedTagId = SelectedTagId;
+        _tagQueueComboBox.Items.Clear();
+        _tagQueueComboBox.Items.Add(new TagChoice(null, "×‘×—×¨ ×ª×’×™×ª"));
+        foreach (var tag in tags)
+        {
+            _tagQueueComboBox.Items.Add(new TagChoice(tag.Id, tag.Name));
+        }
+        _tagQueueComboBox.SelectedIndex = 0;
+        if (selectedTagId.HasValue)
+        {
+            for (var index = 0; index < _tagQueueComboBox.Items.Count; index++)
+            {
+                if (_tagQueueComboBox.Items[index] is TagChoice choice && choice.Id == selectedTagId)
+                {
+                    _tagQueueComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+
+        _weakSpotsGrid.Rows.Clear();
+        foreach (var weakSpot in weakSpots)
+        {
+            _weakSpotsGrid.Rows.Add(
+                weakSpot.Kind,
+                weakSpot.Name,
+                $"{weakSpot.LowRatingPercent:0.#}%",
+                weakSpot.FailureCount,
+                weakSpot.OverdueCount,
+                weakSpot.ItemCount);
+        }
+    }
+
+    private void BuildLayout()
+    {
+        var scrollHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = ClassicPalette.PanelBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            ColumnCount = 2,
+            RowCount = 3,
+            Padding = new Padding(8),
+            RightToLeft = RightToLeft.Yes,
+            Height = 760,
+            MinimumSize = new Size(0, 760)
+        };
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 60F));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 40F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 228F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 264F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        var summaryPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 6,
+            RowCount = 2
+        };
+        for (var index = 0; index < 6; index++)
+        {
+            summaryPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 16.666F));
+        }
+        summaryPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        summaryPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        summaryPanel.Controls.Add(CreateSummaryBox("×œ×”×™×•×", _dueTodayLabel), 0, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×‘××™×—×•×¨", _overdueLabel), 1, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×—×“×©×™×", _newLabel), 2, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("× ×›×©×œ×• ×œ××—×¨×•× ×”", _failedLabel), 3, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×œ×¢×™×•×Ÿ ×—×•×–×¨", _reviewLaterLabel), 4, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("×¡×©×Ÿ ×ž×•×©×”×”", _pausedLabel), 5, 0);
+        summaryPanel.Controls.Add(CreateSummaryBox("× ×œ×ž×“×• ×”×™×•×", _unitsStudiedLabel), 0, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×™×—×™×“×•×ª ×ž×ž×ª×™× ×•×ª", _unitsWaitingLabel), 1, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×™×—×™×“×•×ª ×œ×‘×™×¦×•×¢", _unitsDueLabel), 2, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×™×—×™×“×•×ª ×—×œ×©×•×ª", _unitsFailedLabel), 3, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×ž×—×–×•×¨ ×”×•×©×œ×", _unitsCompletedLabel), 4, 1);
+        summaryPanel.Controls.Add(CreateSummaryBox("×‘×¦×•×ž×ª ×”× ×‘×—×¨", _unitsSelectedNodeLabel), 5, 1);
+
+        var queuePanel = new GroupBox
+        {
+            Text = "×ª×•×¨×™× ×—×›×ž×™×",
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        var queueLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 7,
+            Padding = new Padding(8),
+            RightToLeft = RightToLeft.Yes
+        };
+        queueLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        queueLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50F));
+        for (var index = 0; index < 7; index++)
+        {
+            queueLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        }
+
+        queueLayout.Controls.Add(CreateActionButton("×”×ª×—×œ ×—×–×¨×” ×™×•×ž×™×ª", (_, _) => DailyReviewRequested?.Invoke(this, EventArgs.Empty)), 0, 0);
+        queueLayout.Controls.Add(CreateActionButton("×”×ž×©×š ×¡×©×Ÿ ×ž×•×©×”×”", (_, _) => ResumeRequested?.Invoke(this, EventArgs.Empty)), 1, 0);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ × ×›×©×œ×™×", (_, _) => FailedRequested?.Invoke(this, EventArgs.Empty)), 0, 1);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ ×§×©×™×", (_, _) => HardRequested?.Invoke(this, EventArgs.Empty)), 1, 1);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ ×—×“×©×™×", (_, _) => NewRequested?.Invoke(this, EventArgs.Empty)), 0, 2);
+        queueLayout.Controls.Add(CreateActionButton("×ž×¡×•×ž× ×™× ×œ×¢×™×•×Ÿ ×—×•×–×¨", (_, _) => ReviewLaterRequested?.Invoke(this, EventArgs.Empty)), 1, 2);
+        queueLayout.Controls.Add(CreateActionButton("×œ×¤×™ ×”×¦×•×ž×ª ×”× ×‘×—×¨", (_, _) => SelectedNodeRequested?.Invoke(this, EventArgs.Empty)), 0, 3);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×” ×¢×œ ×‘××™×—×•×¨", (_, _) => OverdueRequested?.Invoke(this, EventArgs.Empty)), 1, 3);
+        queueLayout.Controls.Add(CreateActionButton("×¤×ª×— ×—×–×¨×” ×ž×¡×•× × ×ª", (_, _) => FilteredRequested?.Invoke(this, EventArgs.Empty)), 0, 4);
+        queueLayout.Controls.Add(CreateActionButton("×™×—×™×“×•×ª ×©×”×’×™×¢ ×–×ž× ×Ÿ", (_, _) => UnitDueRequested?.Invoke(this, EventArgs.Empty)), 0, 5);
+        queueLayout.Controls.Add(CreateActionButton("×™×—×™×“×•×ª ×—×œ×©×•×ª", (_, _) => UnitFailedRequested?.Invoke(this, EventArgs.Empty)), 1, 5);
+        queueLayout.Controls.Add(CreateActionButton("×—×–×¨×ª ×™×—×™×“×” × ×‘×—×¨×ª", (_, _) => SelectedUnitRequested?.Invoke(this, EventArgs.Empty)), 0, 6);
+        queuePanel.Controls.Add(queueLayout);
+
+        var presetPanel = new GroupBox
+        {
+            Text = "×¤×¨×™×¡×˜×™× ×©×ž×•×¨×™×",
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        var presetLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            Padding = new Padding(8),
+            RightToLeft = RightToLeft.Yes
+        };
+        presetLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 54F));
+        presetLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        presetLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));
+
+        var tagQueuePanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes
+        };
+        _tagQueueComboBox.Width = 150;
+        _tagQueueComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        tagQueuePanel.Controls.Add(CreateActionButton("×—×–×¨×” ×œ×¤×™ ×ª×’×™×ª", (_, _) => TagQueueRequested?.Invoke(this, SelectedTagId)));
+        tagQueuePanel.Controls.Add(_tagQueueComboBox);
+
+        _presetListBox.Dock = DockStyle.Fill;
+        _presetListBox.IntegralHeight = false;
+
+        var presetButtons = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes
+        };
+        presetButtons.Controls.Add(CreateActionButton("×”×¤×¢×œ", (_, _) => { if (SelectedPreset is not null) RunPresetRequested?.Invoke(this, SelectedPreset); }));
+        presetButtons.Controls.Add(CreateActionButton("×—×“×©", (_, _) => AddPresetRequested?.Invoke(this, EventArgs.Empty)));
+        presetButtons.Controls.Add(CreateActionButton("×¢×¨×•×š", (_, _) => { if (SelectedPreset is not null) EditPresetRequested?.Invoke(this, SelectedPreset); }));
+        presetButtons.Controls.Add(CreateActionButton("×ž×—×§", (_, _) => { if (SelectedPreset is not null) DeletePresetRequested?.Invoke(this, SelectedPreset); }));
+
+        presetLayout.Controls.Add(tagQueuePanel, 0, 0);
+        presetLayout.Controls.Add(_presetListBox, 0, 1);
+        presetLayout.Controls.Add(presetButtons, 0, 2);
+        presetPanel.Controls.Add(presetLayout);
+
+        var weakSpotsPanel = new GroupBox
+        {
+            Text = "× ×§×•×“×•×ª ×—×•×œ×©×”",
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        _weakSpotsGrid.Dock = DockStyle.Fill;
+        _weakSpotsGrid.AllowUserToAddRows = false;
+        _weakSpotsGrid.AllowUserToDeleteRows = false;
+        _weakSpotsGrid.ReadOnly = true;
+        _weakSpotsGrid.RowHeadersVisible = false;
+        _weakSpotsGrid.SelectionMode = DataGridViewSelectionMode.FullRowSelect;
+        _weakSpotsGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _weakSpotsGrid.RightToLeft = RightToLeft.Yes;
+        UiLayoutHelper.StyleDataGridView(_weakSpotsGrid);
+        _weakSpotsGrid.Columns.Add("Kind", "×¡×•×’");
+        _weakSpotsGrid.Columns.Add("Name", "×©×");
+        _weakSpotsGrid.Columns.Add("LowRatingPercent", "% ×“×™×¨×•×’ × ×ž×•×š");
+        _weakSpotsGrid.Columns.Add("FailureCount", "×›×©×œ×•× ×•×ª");
+        _weakSpotsGrid.Columns.Add("OverdueCount", "×‘××™×—×•×¨");
+        _weakSpotsGrid.Columns.Add("ItemCount", "×›×¨×˜×™×¡×™×");
+        var weakSpotsBody = new Panel
+        {
+            Dock = DockStyle.Fill,
+            Padding = new Padding(6),
+            BackColor = ClassicPalette.CardBackground
+        };
+        weakSpotsBody.Controls.Add(_weakSpotsGrid);
+        weakSpotsPanel.Controls.Add(weakSpotsBody);
+
+        root.Controls.Add(summaryPanel, 0, 0);
+        root.SetColumnSpan(summaryPanel, 2);
+        root.Controls.Add(queuePanel, 0, 1);
+        root.Controls.Add(presetPanel, 1, 1);
+        root.Controls.Add(weakSpotsPanel, 0, 2);
+        root.SetColumnSpan(weakSpotsPanel, 2);
+        scrollHost.Controls.Add(root);
+        Controls.Add(scrollHost);
+    }
+
+    private static GroupBox CreateSummaryBox(string title, Label valueLabel)
+    {
+        valueLabel.Dock = DockStyle.Fill;
+        valueLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        valueLabel.TextAlign = ContentAlignment.MiddleCenter;
+        valueLabel.RightToLeft = RightToLeft.Yes;
+
+        var box = new GroupBox
+        {
+            Text = title,
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground
+        };
+        box.Controls.Add(valueLabel);
+        UiLayoutHelper.ApplyRecursive(box);
+        return box;
+    }
+
+    private static Button CreateActionButton(string text, EventHandler onClick)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 194,
+            Height = 38,
+            Margin = new Padding(4)
+        };
+        UiLayoutHelper.StyleActionButton(button, 160, 38);
+        button.Click += onClick;
+        return button;
+    }
+
+    private sealed record TagChoice(int? Id, string Name)
+    {
+        public override string ToString() => Name;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\ReviewSessionControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class ReviewSessionControl : UserControl
+{
+    private readonly TableLayoutPanel _contentRoot = new();
+    private readonly Label _titleLabel = new();
+    private readonly Label _progressLabel = new();
+    private readonly Label _topicLabel = new();
+    private readonly Label _pathLabel = new();
+    private readonly Label _metaLabel = new();
+    private readonly Label _questionTextLabel = new();
+    private readonly TextBox _answerTextBox = new();
+    private readonly Panel _answerPanel = new();
+    private readonly Button _showAnswerButton = new();
+    private readonly FlowLayoutPanel _ratingButtonsPanel = new();
+    private readonly Panel _summaryPanel = new();
+    private readonly Label _summaryTitleLabel = new();
+    private readonly Label _summaryStatsLabel = new();
+    private readonly Label _summaryHintLabel = new();
+    private readonly Button _retryFailedButton = new();
+    private readonly Button _closeSummaryButton = new();
+    private readonly Button _pauseSessionButton = new();
+    private readonly Button _skipButton = new();
+    private readonly Button _reviewLaterButton = new();
+    private readonly Label _orderModeLabel = new();
+
+    private bool _answerVisible;
+
+    public event EventHandler? RevealAnswerRequested;
+    public event EventHandler<ReviewRating>? RatingRequested;
+    public event EventHandler? RetryFailedRequested;
+    public event EventHandler? CloseRequested;
+    public event EventHandler? PauseRequested;
+    public event EventHandler? SkipRequested;
+    public event EventHandler? ReviewLaterRequested;
+
+    public ReviewSessionControl()
+    {
+        Dock = DockStyle.Fill;
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        TabStop = true;
+        BuildLayout();
+        UiLayoutHelper.ApplyRecursive(this);
+        ShowIdleState();
+    }
+
+    public bool IsSummaryVisible => _summaryPanel.Visible;
+    public bool IsAnswerVisible => _answerVisible;
+
+    public void ShowReviewItem(StudyItemModel item, ReviewSessionProgress progress, string sessionTitle, ReviewSessionOrderMode orderMode)
+    {
+        _contentRoot.Visible = true;
+        _summaryPanel.Visible = false;
+        _titleLabel.Text = sessionTitle;
+        _progressLabel.Text = $"×¡×”\"×›: {progress.TotalCount} | ×”×•×©×œ×ž×•: {progress.CompletedCount} | × ×›×©×œ×•: {progress.FailedCount} | × ×©××¨×•: {progress.RemainingCount}";
+        _topicLabel.Text = item.Topic;
+        _pathLabel.Text = item.SubjectPath.Replace(" > ", " / ", StringComparison.Ordinal);
+        _metaLabel.Text = $"×©×œ×‘: {item.Level} | ×§×•×©×™: {TranslateDifficulty(item.Difficulty)} | ×œ×‘×™×¦×•×¢: {item.DueDate:dd/MM/yyyy}";
+        _orderModeLabel.Text = $"×¡×“×¨ ×¡×©×Ÿ: {TranslateOrderMode(orderMode)}";
+        _questionTextLabel.Text = item.Question;
+        _answerTextBox.Text = item.Answer;
+        SetAnswerVisible(false);
+        Visible = true;
+        FocusForReview();
+    }
+
+    public void ShowSummary(ReviewSessionSummary summary)
+    {
+        _contentRoot.Visible = false;
+        _summaryPanel.Visible = true;
+        _summaryTitleLabel.Text = summary.Title;
+        _summaryStatsLabel.Text =
+            $"×¡×”\"×› ×›×¨×˜×™×¡×™×: {summary.TotalCount}{Environment.NewLine}" +
+            $"×”×•×©×œ×ž×•: {summary.CompletedCount}{Environment.NewLine}" +
+            $"× ×›×©×œ×•: {summary.FailedCount}{Environment.NewLine}" +
+            $"×“×•×¨×’×• ×’×‘×•×”: {summary.HighRatingCount}{Environment.NewLine}" +
+            $"×“×•×¨×’×• × ×ž×•×š: {summary.LowRatingCount}{Environment.NewLine}" +
+            $"×ž×¡×•×ž× ×™× ×œ×¢×™×•×Ÿ ×—×•×–×¨: {summary.ReviewLaterCount}{Environment.NewLine}" +
+            $"×“×•×œ×’×•: {summary.SkippedCount}{Environment.NewLine}" +
+            $"× ×©××¨×•: {summary.RemainingCount}" +
+            (string.IsNullOrWhiteSpace(summary.AdditionalSummaryText)
+                ? string.Empty
+                : $"{Environment.NewLine}{summary.AdditionalSummaryText}");
+        _summaryHintLabel.Text = summary.FailedCount > 0
+            ? "××¤×©×¨ ×œ×”×¤×¢×™×œ ×¢×›×©×™×• ×¡×©×Ÿ × ×•×¡×£ ×¨×§ ×¢×œ ×”×›×¨×˜×™×¡×™× ×©× ×›×©×œ×•."
+            : "××™×Ÿ ×›×¨×˜×™×¡×™× ×©× ×›×©×œ×• ×‘×¡×©×Ÿ ×”×–×”.";
+        _retryFailedButton.Visible = summary.FailedCount > 0;
+        FocusForReview();
+    }
+
+    public void RevealAnswer()
+    {
+        SetAnswerVisible(true);
+        FocusForReview();
+    }
+
+    public void ShowIdleState()
+    {
+        _contentRoot.Visible = true;
+        _summaryPanel.Visible = false;
+        _titleLabel.Text = "×ž×¡×š ×—×–×¨×”";
+        _progressLabel.Text = "×‘×—×¨×• ×¡×©×Ÿ ×—×–×¨×” ×¨×’×™×œ ××• ×—×–×¨×” ×¢×œ ×›×¨×˜×™×¡×™× × ×‘×—×¨×™×.";
+        _topicLabel.Text = "××™×Ÿ ×¡×©×Ÿ ×¤×¢×™×œ";
+        _pathLabel.Text = string.Empty;
+        _metaLabel.Text = "×¨×•×•×— ××• Enter ×œ×”×¦×’×ª ×ª×©×•×‘×”, ×ž×¡×¤×¨×™× 1-5 ×œ×“×™×¨×•×’.";
+        _orderModeLabel.Text = "×¡×“×¨ ×¡×©×Ÿ: ×œ×¤×™ ×”×¡×“×¨ ×”×¨×’×™×œ";
+        _questionTextLabel.Text = "×¤×ª×—×• ×—×–×¨×” ×™×•×ž×™×ª/×ž×¡×•× × ×ª ××• ×”×¤×¢×™×œ×• ×—×–×¨×” ×¢×œ ×›×¨×˜×™×¡×™× ×©× ×‘×—×¨×•.";
+        _answerTextBox.Text = string.Empty;
+        SetAnswerVisible(false);
+    }
+
+    public bool HandleShortcut(Keys keyData)
+    {
+        if (!Visible)
+        {
+            return false;
+        }
+
+        if (_summaryPanel.Visible)
+        {
+            if ((keyData == Keys.Enter || keyData == Keys.Space) && _retryFailedButton.Visible)
+            {
+                RetryFailedRequested?.Invoke(this, EventArgs.Empty);
+                return true;
+            }
+
+            if (keyData == Keys.Escape)
+            {
+                CloseRequested?.Invoke(this, EventArgs.Empty);
+                return true;
+            }
+
+            return false;
+        }
+
+        if (!_answerVisible && (keyData == Keys.Space || keyData == Keys.Enter))
+        {
+            RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        if (_answerVisible && TryMapRatingShortcut(keyData, out var rating))
+        {
+            RatingRequested?.Invoke(this, rating);
+            return true;
+        }
+
+        if (keyData == Keys.S)
+        {
+            SkipRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        if (keyData == Keys.R)
+        {
+            ReviewLaterRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        if (keyData == Keys.P)
+        {
+            PauseRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        if (keyData == Keys.Escape)
+        {
+            CloseRequested?.Invoke(this, EventArgs.Empty);
+            return true;
+        }
+
+        return false;
+    }
+
+    public void AutomationRevealAnswer()
+    {
+        if (!_answerVisible)
+        {
+            RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+        }
+    }
+
+    public void AutomationRate(ReviewRating rating)
+    {
+        if (_answerVisible)
+        {
+            RatingRequested?.Invoke(this, rating);
+        }
+    }
+
+    public void AutomationSkip()
+    {
+        SkipRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void AutomationReviewLater()
+    {
+        ReviewLaterRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void AutomationPause()
+    {
+        PauseRequested?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void FocusForReview()
+    {
+        Select();
+        Focus();
+    }
+
+    private void BuildLayout()
+    {
+        var scrollHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = ClassicPalette.PanelBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _contentRoot.Dock = DockStyle.Top;
+        _contentRoot.ColumnCount = 1;
+        _contentRoot.RowCount = 4;
+        _contentRoot.Padding = new Padding(12);
+        _contentRoot.BackColor = ClassicPalette.PanelBackground;
+        _contentRoot.RightToLeft = RightToLeft.Yes;
+        _contentRoot.Height = 760;
+        _contentRoot.MinimumSize = new Size(0, 760);
+
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 82F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 110F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        _contentRoot.RowStyles.Add(new RowStyle(SizeType.Absolute, 170F));
+
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.Teal,
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _pauseSessionButton.Text = "×”×©×”×”";
+        _pauseSessionButton.Dock = DockStyle.Left;
+        _pauseSessionButton.Width = 112;
+        UiLayoutHelper.StyleActionButton(_pauseSessionButton, 112, 36);
+        _pauseSessionButton.Click += (_, _) => PauseRequested?.Invoke(this, EventArgs.Empty);
+
+        var titleStack = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            BackColor = Color.Transparent,
+            RightToLeft = RightToLeft.Yes
+        };
+        titleStack.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+        titleStack.RowStyles.Add(new RowStyle(SizeType.Percent, 50F));
+
+        _titleLabel.Dock = DockStyle.Fill;
+        _titleLabel.ForeColor = Color.White;
+        _titleLabel.Font = new Font("Microsoft Sans Serif", 14F, FontStyle.Bold);
+        _titleLabel.TextAlign = ContentAlignment.MiddleRight;
+
+        _progressLabel.Dock = DockStyle.Fill;
+        _progressLabel.ForeColor = Color.White;
+        _progressLabel.Font = new Font("Microsoft Sans Serif", 10F, FontStyle.Bold);
+        _progressLabel.TextAlign = ContentAlignment.MiddleRight;
+
+        titleStack.Controls.Add(_titleLabel, 0, 0);
+        titleStack.Controls.Add(_progressLabel, 0, 1);
+
+        headerPanel.Controls.Add(titleStack);
+        headerPanel.Controls.Add(_pauseSessionButton);
+
+        var detailsPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            BackColor = ClassicPalette.CardBackground,
+            CellBorderStyle = TableLayoutPanelCellBorderStyle.Single,
+            RightToLeft = RightToLeft.Yes
+        };
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+        detailsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 26F));
+
+        ConfigureDetailLabel(_topicLabel, new Font("Microsoft Sans Serif", 12F, FontStyle.Bold));
+        ConfigureDetailLabel(_pathLabel, new Font("Microsoft Sans Serif", 9.5F, FontStyle.Regular));
+        ConfigureDetailLabel(_metaLabel, new Font("Microsoft Sans Serif", 9F, FontStyle.Regular));
+        ConfigureDetailLabel(_orderModeLabel, new Font("Microsoft Sans Serif", 9F, FontStyle.Bold));
+
+        detailsPanel.Controls.Add(_topicLabel, 0, 0);
+        detailsPanel.Controls.Add(_pathLabel, 0, 1);
+        detailsPanel.Controls.Add(_metaLabel, 0, 2);
+        detailsPanel.Controls.Add(_orderModeLabel, 0, 3);
+
+        var questionPanel = CreateTextPanel("×©××œ×”", out var questionBodyHost);
+        _questionTextLabel.Dock = DockStyle.Fill;
+        _questionTextLabel.BackColor = Color.White;
+        _questionTextLabel.BorderStyle = BorderStyle.FixedSingle;
+        _questionTextLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        _questionTextLabel.TextAlign = ContentAlignment.TopRight;
+        _questionTextLabel.Padding = new Padding(12);
+        _questionTextLabel.RightToLeft = RightToLeft.Yes;
+        questionBodyHost.Controls.Add(_questionTextLabel);
+
+        var answerOuterPanel = CreateTextPanel("×ª×©×•×‘×”", out var answerBodyHost);
+        _answerPanel.Dock = DockStyle.Fill;
+        _answerPanel.RightToLeft = RightToLeft.Yes;
+
+        _answerTextBox.Dock = DockStyle.Fill;
+        _answerTextBox.Multiline = true;
+        _answerTextBox.ReadOnly = true;
+        _answerTextBox.ScrollBars = ScrollBars.Vertical;
+        _answerTextBox.BorderStyle = BorderStyle.FixedSingle;
+        _answerTextBox.BackColor = Color.White;
+        _answerTextBox.Font = new Font("Microsoft Sans Serif", 12F, FontStyle.Regular);
+        _answerTextBox.RightToLeft = RightToLeft.Yes;
+
+        _answerPanel.Controls.Add(_answerTextBox);
+        answerBodyHost.Controls.Add(_answerPanel);
+
+        var contentSplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            FixedPanel = FixedPanel.None,
+            IsSplitterFixed = false,
+            BorderStyle = BorderStyle.None,
+            Panel1MinSize = 120,
+            Panel2MinSize = 120,
+            RightToLeft = RightToLeft.Yes
+        };
+        contentSplit.Resize += (_, _) =>
+        {
+            var availableHeight = contentSplit.Height - contentSplit.SplitterWidth;
+            if (availableHeight <= contentSplit.Panel1MinSize + contentSplit.Panel2MinSize)
+            {
+                return;
+            }
+
+            var target = Math.Max(contentSplit.Panel1MinSize, availableHeight / 2);
+            var maxTarget = availableHeight - contentSplit.Panel2MinSize;
+            contentSplit.SplitterDistance = Math.Min(target, maxTarget);
+        };
+        contentSplit.Panel1.Controls.Add(questionPanel);
+        contentSplit.Panel2.Controls.Add(answerOuterPanel);
+
+        var actionsPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.CardBackground,
+            BorderStyle = BorderStyle.FixedSingle,
+            Padding = new Padding(10),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var keyboardHintLabel = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×§×™×¦×•×¨×™×: ×¨×•×•×—/Enter ×ª×©×•×‘×” | 1-5 ×“×™×¨×•×’ | S ×“×œ×’ | R ×¢×™×•×Ÿ ×—×•×–×¨ | P ×”×©×”×” | Esc ×¡×’×™×¨×”",
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _showAnswerButton.Text = "×”×¦×’ ×ª×©×•×‘×”";
+        _showAnswerButton.Width = 132;
+        _showAnswerButton.Height = 38;
+        UiLayoutHelper.StyleActionButton(_showAnswerButton, 132, 38);
+        _showAnswerButton.Click += (_, _) => RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+
+        _skipButton.Text = "×“×œ×’";
+        _skipButton.Width = 96;
+        _skipButton.Height = 38;
+        UiLayoutHelper.StyleActionButton(_skipButton, 96, 38);
+        _skipButton.Click += (_, _) => SkipRequested?.Invoke(this, EventArgs.Empty);
+
+        _reviewLaterButton.Text = "×¢×™×•×Ÿ ×—×•×–×¨ ×‘×¡×•×£";
+        _reviewLaterButton.Width = 152;
+        _reviewLaterButton.Height = 38;
+        UiLayoutHelper.StyleActionButton(_reviewLaterButton, 152, 38);
+        _reviewLaterButton.Click += (_, _) => ReviewLaterRequested?.Invoke(this, EventArgs.Empty);
+
+        _ratingButtonsPanel.Dock = DockStyle.Fill;
+        _ratingButtonsPanel.FlowDirection = FlowDirection.RightToLeft;
+        _ratingButtonsPanel.WrapContents = true;
+        _ratingButtonsPanel.RightToLeft = RightToLeft.Yes;
+        _ratingButtonsPanel.Padding = new Padding(0, 4, 0, 0);
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("5 ×ž×¦×•×™×Ÿ", ReviewRating.Perfect, Color.FromArgb(202, 222, 240)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("4 ×˜×•×‘", ReviewRating.Easy, Color.FromArgb(206, 232, 234)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("3 ×‘×¡×“×¨", ReviewRating.Good, Color.FromArgb(221, 235, 210)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("2 ×—×œ×©", ReviewRating.Hard, Color.FromArgb(240, 228, 204)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("1 ×’×¨×•×¢", ReviewRating.Again, Color.FromArgb(241, 216, 208)));
+
+        var primaryButtonsPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 46,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+        primaryButtonsPanel.Controls.Add(_reviewLaterButton);
+        primaryButtonsPanel.Controls.Add(_skipButton);
+        primaryButtonsPanel.Controls.Add(_showAnswerButton);
+
+        var ratingHostPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes,
+            Padding = new Padding(0, 6, 0, 0)
+        };
+        ratingHostPanel.Controls.Add(_ratingButtonsPanel);
+
+        var actionsLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3,
+            RightToLeft = RightToLeft.Yes
+        };
+        actionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 30F));
+        actionsLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
+        actionsLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        actionsLayout.Controls.Add(keyboardHintLabel, 0, 0);
+        actionsLayout.Controls.Add(primaryButtonsPanel, 0, 1);
+        actionsLayout.Controls.Add(ratingHostPanel, 0, 2);
+        actionsPanel.Controls.Add(actionsLayout);
+
+        BuildSummaryPanel();
+
+        _contentRoot.Controls.Add(headerPanel, 0, 0);
+        _contentRoot.Controls.Add(detailsPanel, 0, 1);
+        _contentRoot.Controls.Add(contentSplit, 0, 2);
+        _contentRoot.Controls.Add(actionsPanel, 0, 3);
+
+        scrollHost.Controls.Add(_contentRoot);
+        Controls.Add(_summaryPanel);
+        Controls.Add(scrollHost);
+    }
+
+    private void BuildSummaryPanel()
+    {
+        _summaryPanel.Dock = DockStyle.Fill;
+        _summaryPanel.BackColor = ClassicPalette.PanelBackground;
+        _summaryPanel.Visible = false;
+        _summaryPanel.Padding = new Padding(18);
+        _summaryPanel.RightToLeft = RightToLeft.Yes;
+
+        var card = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = ClassicPalette.CardBackground,
+            Padding = new Padding(16),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _summaryTitleLabel.Dock = DockStyle.Top;
+        _summaryTitleLabel.Height = 44;
+        _summaryTitleLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        _summaryTitleLabel.TextAlign = ContentAlignment.MiddleRight;
+        _summaryTitleLabel.BackColor = ClassicPalette.Teal;
+        _summaryTitleLabel.ForeColor = Color.White;
+
+        _summaryStatsLabel.Dock = DockStyle.Fill;
+        _summaryStatsLabel.Font = new Font("Microsoft Sans Serif", 13F, FontStyle.Bold);
+        _summaryStatsLabel.TextAlign = ContentAlignment.TopRight;
+        _summaryStatsLabel.Padding = new Padding(12);
+        _summaryStatsLabel.RightToLeft = RightToLeft.Yes;
+
+        _summaryHintLabel.Dock = DockStyle.Top;
+        _summaryHintLabel.Height = 36;
+        _summaryHintLabel.TextAlign = ContentAlignment.MiddleRight;
+        _summaryHintLabel.RightToLeft = RightToLeft.Yes;
+
+        var actions = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Bottom,
+            Height = 84,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        _retryFailedButton.Text = "×¡×©×Ÿ × ×•×¡×£ ×¢×œ ×”× ×›×©×œ×™×";
+        _retryFailedButton.Width = 184;
+        _retryFailedButton.Height = 38;
+        UiLayoutHelper.StyleActionButton(_retryFailedButton, 184, 38);
+        _retryFailedButton.Click += (_, _) => RetryFailedRequested?.Invoke(this, EventArgs.Empty);
+
+        _closeSummaryButton.Text = "×—×–×¨×” ×œ×ž×¡×š ×”×§×•×“×";
+        _closeSummaryButton.Width = 184;
+        _closeSummaryButton.Height = 38;
+        UiLayoutHelper.StyleActionButton(_closeSummaryButton, 184, 38);
+        _closeSummaryButton.Click += (_, _) => CloseRequested?.Invoke(this, EventArgs.Empty);
+
+        actions.Controls.Add(_retryFailedButton);
+        actions.Controls.Add(_closeSummaryButton);
+
+        card.Controls.Add(_summaryStatsLabel);
+        card.Controls.Add(_summaryHintLabel);
+        card.Controls.Add(actions);
+        card.Controls.Add(_summaryTitleLabel);
+        _summaryPanel.Controls.Add(card);
+    }
+
+    private Button CreateRatingButton(string text, ReviewRating rating, Color backColor)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 104,
+            Height = 36,
+            BackColor = backColor
+        };
+        UiLayoutHelper.StyleActionButton(button, 104, 36);
+        button.Click += (_, _) => RatingRequested?.Invoke(this, rating);
+        return button;
+    }
+
+    private static Panel CreateTextPanel(string caption, out Panel bodyHost)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = caption,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        bodyHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        panel.Controls.Add(bodyHost);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private void SetAnswerVisible(bool isVisible)
+    {
+        _answerVisible = isVisible;
+        _answerPanel.Visible = isVisible;
+        _showAnswerButton.Enabled = !isVisible;
+        foreach (Control control in _ratingButtonsPanel.Controls)
+        {
+            control.Enabled = isVisible;
+        }
+    }
+
+    private static bool TryMapRatingShortcut(Keys keyData, out ReviewRating rating)
+    {
+        switch (keyData)
+        {
+            case Keys.D1:
+            case Keys.NumPad1:
+                rating = ReviewRating.Again;
+                return true;
+            case Keys.D2:
+            case Keys.NumPad2:
+                rating = ReviewRating.Hard;
+                return true;
+            case Keys.D3:
+            case Keys.NumPad3:
+                rating = ReviewRating.Good;
+                return true;
+            case Keys.D4:
+            case Keys.NumPad4:
+                rating = ReviewRating.Easy;
+                return true;
+            case Keys.D5:
+            case Keys.NumPad5:
+                rating = ReviewRating.Perfect;
+                return true;
+            default:
+                rating = ReviewRating.Good;
+                return false;
+        }
+    }
+
+    private static void ConfigureDetailLabel(Label label, Font font)
+    {
+        label.Dock = DockStyle.Fill;
+        label.Font = font;
+        label.TextAlign = ContentAlignment.MiddleRight;
+        label.RightToLeft = RightToLeft.Yes;
+        label.Padding = new Padding(8, 0, 8, 0);
+    }
+
+    private static string TranslateDifficulty(StudyDifficulty difficulty)
+    {
+        return difficulty switch
+        {
+            StudyDifficulty.Easy => "×§×œ×”",
+            StudyDifficulty.Medium => "×‘×™× ×•× ×™×ª",
+            StudyDifficulty.Hard => "×§×©×”",
+            _ => "×œ×œ×"
+        };
+    }
+
+    private static string TranslateOrderMode(ReviewSessionOrderMode orderMode)
+    {
+        return orderMode switch
+        {
+            ReviewSessionOrderMode.Random => "××§×¨××™",
+            ReviewSessionOrderMode.HardFirst => "×ž×”×§×©×™× ×œ×§×œ×™×",
+            ReviewSessionOrderMode.FailedFirst => "×ž×”× ×›×©×œ×™× ×ª×—×™×œ×”",
+            ReviewSessionOrderMode.NewFirst => "×ž×”×—×“×©×™× ×ª×—×™×œ×”",
+            _ => "×œ×¤×™ ×”×¡×“×¨ ×”×¨×’×™×œ"
+        };
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\StudyCardControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class StudyCardControl : UserControl
+{
+    private readonly StudyItemModel _item;
+    private readonly CheckBox _selectionCheckBox = new();
+
+    public event EventHandler<ReviewRating>? RatingClicked;
+    public event EventHandler<int>? EditClicked;
+    public event EventHandler<int>? DeleteClicked;
+    public event EventHandler<int>? TagsClicked;
+
+    public StudyCardControl(StudyItemModel item)
+    {
+        _item = item;
+        BackColor = ClassicPalette.CardBackground;
+        Margin = new Padding(8, 6, 8, 6);
+        Padding = new Padding(10);
+        Height = 470;
+        MinimumSize = new Size(660, 470);
+        RightToLeft = RightToLeft.Yes;
+        BuildLayout();
+        UiLayoutHelper.ApplyRecursive(this);
+    }
+
+    public int ItemId => _item.Id;
+
+    public bool IsSelected
+    {
+        get => _selectionCheckBox.Checked;
+        set => _selectionCheckBox.Checked = value;
+    }
+
+    protected override void OnPaint(PaintEventArgs e)
+    {
+        base.OnPaint(e);
+        using var outerPen = new Pen(ClassicPalette.Teal, 2F);
+        using var innerPen = new Pen(ClassicPalette.TealLight, 1F);
+        e.Graphics.DrawRectangle(outerPen, 0, 0, Width - 1, Height - 1);
+        e.Graphics.DrawRectangle(innerPen, 3, 3, Width - 7, Height - 7);
+    }
+
+    private void BuildLayout()
+    {
+        var rootLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 6,
+            RightToLeft = RightToLeft.Yes,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 90F));
+
+        var contentSplit = new SplitContainer
+        {
+            Dock = DockStyle.Fill,
+            Orientation = Orientation.Horizontal,
+            FixedPanel = FixedPanel.None,
+            IsSplitterFixed = false,
+            BorderStyle = BorderStyle.None,
+            Panel1MinSize = 80,
+            Panel2MinSize = 80,
+            RightToLeft = RightToLeft.Yes
+        };
+        contentSplit.Resize += (_, _) =>
+        {
+            var availableHeight = contentSplit.Height - contentSplit.SplitterWidth;
+            if (availableHeight <= contentSplit.Panel1MinSize + contentSplit.Panel2MinSize)
+            {
+                return;
+            }
+
+            var target = Math.Max(contentSplit.Panel1MinSize, availableHeight / 2);
+            var maxTarget = availableHeight - contentSplit.Panel2MinSize;
+            contentSplit.SplitterDistance = Math.Min(target, maxTarget);
+        };
+        contentSplit.Panel1.Controls.Add(CreateSection("×©××œ×”", _item.Question, 84));
+        contentSplit.Panel2.Controls.Add(CreateSection("×ª×©×•×‘×”", _item.Answer, 84));
+
+        rootLayout.Controls.Add(CreateHeaderPanel(), 0, 0);
+        rootLayout.Controls.Add(CreateTopicLabel(), 0, 1);
+        rootLayout.Controls.Add(CreateTagsPanel(), 0, 2);
+        rootLayout.Controls.Add(contentSplit, 0, 3);
+        rootLayout.Controls.Add(CreateMetaLayout(), 0, 4);
+        rootLayout.Controls.Add(CreateActionsPanel(), 0, 5);
+
+        Controls.Add(rootLayout);
+    }
+
+    private Control CreateHeaderPanel()
+    {
+        var headerPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = ClassicPalette.Teal
+        };
+
+        _selectionCheckBox.Dock = DockStyle.Left;
+        _selectionCheckBox.Width = 32;
+        _selectionCheckBox.BackColor = Color.Transparent;
+
+        var dateLabel = new Label
+        {
+            Dock = DockStyle.Left,
+            Width = 120,
+            Text = _item.DueDate.ToString("dd/MM/yyyy"),
+            ForeColor = Color.White,
+            TextAlign = ContentAlignment.MiddleLeft,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var pathLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = _item.SubjectPath.Replace(" > ", " / ", StringComparison.Ordinal),
+            ForeColor = Color.White,
+            Font = new Font(Font, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        headerPanel.Controls.Add(pathLabel);
+        headerPanel.Controls.Add(dateLabel);
+        headerPanel.Controls.Add(_selectionCheckBox);
+        return headerPanel;
+    }
+
+    private Control CreateTopicLabel()
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = _item.Topic,
+            Font = new Font(Font, FontStyle.Bold),
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
+    private Control CreateTagsPanel()
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var caption = new Label
+        {
+            Dock = DockStyle.Right,
+            Width = 64,
+            Text = "×ª×’×™×•×ª:",
+            TextAlign = ContentAlignment.MiddleRight,
+            Font = new Font(Font, FontStyle.Bold),
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var tagsText = _item.Tags.Count == 0
+            ? "×œ×œ× ×ª×’×™×•×ª"
+            : string.Join(" | ", _item.Tags.Select(tag => tag.Name));
+
+        var valueLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = tagsText,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        panel.Controls.Add(valueLabel);
+        panel.Controls.Add(caption);
+        return panel;
+    }
+
+    private Control CreateMetaLayout()
+    {
+        var metaLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 4,
+            RowCount = 2,
+            RightToLeft = RightToLeft.Yes
+        };
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+
+        metaLayout.Controls.Add(CreateMetaLabel($"×ª××¨×™×š ×™×¦×™×¨×”: {_item.CreatedAt:dd/MM/yyyy}"), 0, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"×—×–×¨×”: {(_item.LastRating.Length == 0 ? "-" : TranslateRating(_item.LastRating))}"), 1, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"×ž×¨×•×•×—: {_item.IntervalDays:0.#} ×™×ž×™×"), 2, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"EF: {_item.EaseFactor:0.00}"), 3, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"×©×œ×‘: {_item.Level}"), 0, 1);
+        metaLayout.Controls.Add(CreateMetaLabel($"×—×–×¨×•×ª: {_item.TotalReviews}"), 1, 1);
+        metaLayout.Controls.Add(CreateMetaLabel($"×§×•×©×™: {TranslateDifficulty(_item.Difficulty)}"), 2, 1);
+        metaLayout.Controls.Add(CreateMetaLabel(_item.IsMastered ? "× ×œ×ž×“ ×”×™×˜×‘" : "×‘×ª×”×œ×™×š"), 3, 1);
+
+        return metaLayout;
+    }
+
+    private Control CreateActionsPanel()
+    {
+        var actionsPanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 2,
+            RightToLeft = RightToLeft.Yes,
+            BackColor = ClassicPalette.CardBackground,
+            Padding = new Padding(0, 4, 0, 0)
+        };
+        actionsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        actionsPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+
+        var manageFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+
+        var deleteButton = new Button { Text = "×ž×—×§", Width = 84, Height = 34 };
+        deleteButton.Click += (_, _) => DeleteClicked?.Invoke(this, _item.Id);
+        var editButton = new Button { Text = "×¢×¨×•×š", Width = 84, Height = 34 };
+        editButton.Click += (_, _) => EditClicked?.Invoke(this, _item.Id);
+        var tagsButton = new Button { Text = "×ª×’×™×•×ª", Width = 92, Height = 34 };
+        tagsButton.Click += (_, _) => TagsClicked?.Invoke(this, _item.Id);
+        UiLayoutHelper.StyleActionButton(deleteButton, 84, 34);
+        UiLayoutHelper.StyleActionButton(editButton, 84, 34);
+        UiLayoutHelper.StyleActionButton(tagsButton, 92, 34);
+
+        manageFlow.Controls.Add(deleteButton);
+        manageFlow.Controls.Add(editButton);
+        manageFlow.Controls.Add(tagsButton);
+
+        var ratingsFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            RightToLeft = RightToLeft.Yes,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+
+        ratingsFlow.Controls.Add(CreateRatingButton("×ž×¦×•×™×Ÿ", ReviewRating.Perfect, Color.FromArgb(202, 222, 240)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×˜×•×‘", ReviewRating.Easy, Color.FromArgb(206, 232, 234)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×‘×¡×“×¨", ReviewRating.Good, Color.FromArgb(221, 235, 210)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×—×œ×©", ReviewRating.Hard, Color.FromArgb(240, 228, 204)));
+        ratingsFlow.Controls.Add(CreateRatingButton("×’×¨×•×¢", ReviewRating.Again, Color.FromArgb(241, 216, 208)));
+
+        actionsPanel.Controls.Add(manageFlow, 0, 0);
+        actionsPanel.Controls.Add(ratingsFlow, 0, 1);
+        return actionsPanel;
+    }
+
+    private Button CreateRatingButton(string text, ReviewRating rating, Color backColor)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 92,
+            Height = 34,
+            BackColor = backColor
+        };
+        UiLayoutHelper.StyleActionButton(button, 92, 34);
+        button.Click += (_, _) => RatingClicked?.Invoke(this, rating);
+        return button;
+    }
+
+    private static Control CreateSection(string caption, string text, int textHeight)
+    {
+        var panel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var header = new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 20,
+            Text = caption,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var textBox = new TextBox
+        {
+            Dock = DockStyle.Fill,
+            Multiline = true,
+            ReadOnly = true,
+            Text = text,
+            ScrollBars = ScrollBars.Vertical,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        panel.Controls.Add(textBox);
+        panel.Controls.Add(header);
+        return panel;
+    }
+
+    private static Label CreateMetaLabel(string text)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = text,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
+    private static string TranslateRating(string value)
+    {
+        return value switch
+        {
+            "Again" => "×’×¨×•×¢",
+            "Hard" => "×—×œ×©",
+            "Good" => "×‘×¡×“×¨",
+            "Easy" => "×˜×•×‘",
+            "Perfect" => "×ž×¦×•×™×Ÿ",
+            _ => value
+        };
+    }
+
+    private static string TranslateDifficulty(StudyDifficulty difficulty)
+    {
+        return difficulty switch
+        {
+            StudyDifficulty.Easy => "×§×œ×”",
+            StudyDifficulty.Medium => "×‘×™× ×•× ×™×ª",
+            StudyDifficulty.Hard => "×§×©×”",
+            _ => "-"
+        };
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\TagsManagerControl.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class TagsManagerControl : UserControl
+{
+    private readonly ListBox _tagListBox = new();
+    private readonly Label _summaryLabel = new();
+    private readonly Label _detailsLabel = new();
+
+    public event EventHandler? AddTagRequested;
+    public event EventHandler<TagModel>? EditTagRequested;
+    public event EventHandler<TagModel>? DeleteTagRequested;
+    public event EventHandler<TagModel>? FilterByTagRequested;
+
+    public TagsManagerControl()
+    {
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        Dock = DockStyle.Fill;
+        BuildLayout();
+        UiLayoutHelper.ApplyRecursive(this);
+    }
+
+    public TagModel? SelectedTag => _tagListBox.SelectedItem as TagModel;
+
+    public void BindTags(IReadOnlyList<TagModel> tags)
+    {
+        var selectedId = SelectedTag?.Id;
+        _tagListBox.BeginUpdate();
+        _tagListBox.Items.Clear();
+        foreach (var tag in tags)
+        {
+            _tagListBox.Items.Add(tag);
+        }
+
+        _tagListBox.EndUpdate();
+        _summaryLabel.Text = $"×¡×”\"×› ×ª×’×™×•×ª: {tags.Count}";
+
+        if (selectedId.HasValue)
+        {
+            for (var index = 0; index < _tagListBox.Items.Count; index++)
+            {
+                if (_tagListBox.Items[index] is TagModel tag && tag.Id == selectedId)
+                {
+                    _tagListBox.SelectedIndex = index;
+                    return;
+                }
+            }
+        }
+
+        if (_tagListBox.Items.Count > 0)
+        {
+            _tagListBox.SelectedIndex = 0;
+        }
+        else
+        {
+            _detailsLabel.Text = "×¢×“×™×™×Ÿ ×œ× ×”×•×’×“×¨×• ×ª×’×™×•×ª.";
+        }
+    }
+
+    public void SelectTag(int tagId)
+    {
+        for (var index = 0; index < _tagListBox.Items.Count; index++)
+        {
+            if (_tagListBox.Items[index] is TagModel tag && tag.Id == tagId)
+            {
+                _tagListBox.SelectedIndex = index;
+                return;
+            }
+        }
+    }
+
+    private void BuildLayout()
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 2,
+            Padding = new Padding(8)
+        };
+
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 270F));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));
+
+        var listPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        _tagListBox.Dock = DockStyle.Fill;
+        _tagListBox.IntegralHeight = false;
+        _tagListBox.SelectedIndexChanged += (_, _) => UpdateSelectedTagDetails();
+
+        listPanel.Controls.Add(_tagListBox);
+        listPanel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×¨×©×™×ž×ª ×ª×’×™×•×ª",
+            TextAlign = ContentAlignment.MiddleRight,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White
+        });
+
+        var detailsPanel = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = ClassicPalette.CardBackground
+        };
+
+        _detailsLabel.Dock = DockStyle.Fill;
+        _detailsLabel.Padding = new Padding(12);
+        _detailsLabel.TextAlign = ContentAlignment.TopRight;
+        _detailsLabel.RightToLeft = RightToLeft.Yes;
+
+        detailsPanel.Controls.Add(_detailsLabel);
+        detailsPanel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Top,
+            Height = 28,
+            Text = "×¤×¨×˜×™ ×ª×’×™×ª",
+            TextAlign = ContentAlignment.MiddleRight,
+            BackColor = ClassicPalette.Teal,
+            ForeColor = Color.White
+        });
+
+        var buttonFlow = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true
+        };
+
+        var addButton = CreateButton("×ª×’×™×ª ×—×“×©×”");
+        addButton.Click += (_, _) => AddTagRequested?.Invoke(this, EventArgs.Empty);
+        var editButton = CreateButton("×¢×¨×™×›×ª ×ª×’×™×ª");
+        editButton.Click += (_, _) =>
+        {
+            if (SelectedTag is not null)
+            {
+                EditTagRequested?.Invoke(this, SelectedTag);
+            }
+        };
+        var deleteButton = CreateButton("×ž×—×™×§×ª ×ª×’×™×ª");
+        deleteButton.Click += (_, _) =>
+        {
+            if (SelectedTag is not null)
+            {
+                DeleteTagRequested?.Invoke(this, SelectedTag);
+            }
+        };
+        var filterButton = CreateButton("×”×¦×’ ×›×¨×˜×™×¡×™×");
+        filterButton.Click += (_, _) =>
+        {
+            if (SelectedTag is not null)
+            {
+                FilterByTagRequested?.Invoke(this, SelectedTag);
+            }
+        };
+
+        buttonFlow.Controls.Add(addButton);
+        buttonFlow.Controls.Add(editButton);
+        buttonFlow.Controls.Add(deleteButton);
+        buttonFlow.Controls.Add(filterButton);
+        buttonFlow.Controls.Add(_summaryLabel);
+        _summaryLabel.AutoSize = true;
+        _summaryLabel.Margin = new Padding(16, 10, 0, 0);
+
+        root.Controls.Add(listPanel, 0, 0);
+        root.Controls.Add(detailsPanel, 1, 0);
+        root.Controls.Add(buttonFlow, 0, 1);
+        root.SetColumnSpan(buttonFlow, 2);
+
+        Controls.Add(root);
+    }
+
+    private void UpdateSelectedTagDetails()
+    {
+        if (SelectedTag is null)
+        {
+            _detailsLabel.Text = "×‘×—×¨×• ×ª×’×™×ª ×ž×”×¨×©×™×ž×”.";
+            return;
+        }
+
+        _detailsLabel.Text =
+            $"×©× ×ª×’×™×ª: {SelectedTag.Name}{Environment.NewLine}{Environment.NewLine}" +
+            $"×ž×¡×¤×¨ ×›×¨×˜×™×¡×™× ×ž×©×•×™×›×™×: {SelectedTag.UsageCount}{Environment.NewLine}{Environment.NewLine}" +
+            "××¤×©×¨ ×œ×™×¦×•×¨, ×œ×¢×¨×•×š, ×œ×ž×—×•×§ ××• ×œ×”×¦×™×’ ××ª ×›×œ ×”×›×¨×˜×™×¡×™× ×©×œ ×ª×’×™×ª ×–×•.";
+    }
+
+    private static Button CreateButton(string text)
+    {
+        var button = new Button
+        {
+            Text = text,
+            Width = 152,
+            Height = 38,
+            Margin = new Padding(4, 6, 4, 4)
+        };
+        UiLayoutHelper.StyleActionButton(button, 132, 38);
+        return button;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\CsvImportForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class CsvImportForm : Form
+{
+    private readonly AppDatabase _database;
+    private readonly int? _fallbackSubjectId;
+    private readonly TextBox _filePathTextBox = new();
+    private readonly CheckBox _hasHeaderCheckBox = new();
+    private readonly Label _fallbackLabel = new();
+    private readonly Label _summaryLabel = new();
+    private readonly DataGridView _previewGrid = new();
+    private readonly Dictionary<CsvFieldType, ComboBox> _mappingBoxes = new();
+    private string[] _columnNames = [];
+    private CsvImportPreviewResult? _lastPreview;
+
+    public CsvImportForm(AppDatabase database, int? fallbackSubjectId, string fallbackSubjectPath)
+    {
+        _database = database;
+        _fallbackSubjectId = fallbackSubjectId;
+
+        Text = "×™×™×‘×•× CSV";
+        StartPosition = FormStartPosition.CenterParent;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(1020, 640);
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+        UiLayoutHelper.ApplyFormDefaults(this);
+
+        BuildLayout(fallbackSubjectPath);
+        UiLayoutHelper.ApplyRecursive(this);
+    }
+
+    public CsvImportPreviewResult? LastPreview => _lastPreview;
+
+    private void BuildLayout(string fallbackSubjectPath)
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 4,
+            Padding = new Padding(12)
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 52F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 176F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));
+
+        var filePanel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 4
+        };
+        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80F));
+        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
+        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
+
+        _filePathTextBox.Dock = DockStyle.Fill;
+        _filePathTextBox.RightToLeft = RightToLeft.No;
+        _hasHeaderCheckBox.Text = "×œ×§×•×‘×¥ ×™×© ×©×•×¨×ª ×›×•×ª×¨×ª";
+        _hasHeaderCheckBox.Checked = true;
+        _hasHeaderCheckBox.Dock = DockStyle.Fill;
+
+        var browseButton = new Button { Text = "×‘×—×™×¨×ª ×§×•×‘×¥", Dock = DockStyle.Fill };
+        browseButton.Click += (_, _) => BrowseFile();
+        var previewButton = new Button { Text = "×˜×¢×™× ×ª ×ª×¦×•×’×” ×ž×§×“×™×ž×”", Dock = DockStyle.Fill };
+        previewButton.Click += (_, _) => LoadPreview();
+
+        filePanel.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "×§×•×‘×¥", TextAlign = ContentAlignment.MiddleRight }, 0, 0);
+        filePanel.Controls.Add(_filePathTextBox, 1, 0);
+        filePanel.Controls.Add(browseButton, 2, 0);
+        filePanel.Controls.Add(previewButton, 3, 0);
+
+        var mappingLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 4
+        };
+        for (var index = 0; index < 4; index++)
+        {
+            mappingLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
+        }
+
+        AddMappingRow(mappingLayout, 0, CsvFieldType.Topic, "× ×•×©×");
+        AddMappingRow(mappingLayout, 1, CsvFieldType.Question, "×©××œ×”");
+        AddMappingRow(mappingLayout, 2, CsvFieldType.Answer, "×ª×©×•×‘×”");
+        AddMappingRow(mappingLayout, 3, CsvFieldType.Book, "×¡×¤×¨");
+        AddMappingRow(mappingLayout, 4, CsvFieldType.Chapter, "×¤×¨×§");
+        AddMappingRow(mappingLayout, 5, CsvFieldType.Verse, "×¤×¡×•×§");
+        AddMappingRow(mappingLayout, 6, CsvFieldType.Difficulty, "×§×•×©×™");
+        AddMappingRow(mappingLayout, 7, CsvFieldType.Tags, "×ª×’×™×•×ª");
+
+        var mappingHost = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
+        _fallbackLabel.Dock = DockStyle.Bottom;
+        _fallbackLabel.Height = 22;
+        _fallbackLabel.TextAlign = ContentAlignment.MiddleRight;
+        _fallbackLabel.Text = _fallbackSubjectId.HasValue
+            ? $"×ž×™×§×•× ×‘×¨×™×¨×ª ×ž×—×“×œ: {fallbackSubjectPath}"
+            : "××™×Ÿ ×›×¨×’×¢ ×¦×•×ž×ª × ×‘×—×¨. ×™×© ×œ×ž×¤×•×ª ×¡×¤×¨/×¤×¨×§/×¤×¡×•×§ ××• ×œ×‘×—×•×¨ ×¦×•×ž×ª ×œ×¤× ×™ ×™×™×‘×•×.";
+        mappingHost.Controls.Add(mappingLayout);
+        mappingHost.Controls.Add(_fallbackLabel);
+
+        _previewGrid.Dock = DockStyle.Fill;
+        _previewGrid.AllowUserToAddRows = false;
+        _previewGrid.AllowUserToDeleteRows = false;
+        _previewGrid.ReadOnly = true;
+        _previewGrid.AutoSizeColumnsMode = DataGridViewAutoSizeColumnsMode.Fill;
+        _previewGrid.RowHeadersVisible = false;
+        UiLayoutHelper.StyleDataGridView(_previewGrid);
+
+        _summaryLabel.Dock = DockStyle.Fill;
+        _summaryLabel.TextAlign = ContentAlignment.MiddleRight;
+
+        var footer = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true
+        };
+        var importButton = new Button { Text = "×™×™×‘×•×", Width = 112, Height = 38 };
+        UiLayoutHelper.StyleActionButton(importButton, 112, 38);
+        importButton.Click += (_, _) => ExecuteImport();
+        var cancelButton = new Button { Text = "×‘×™×˜×•×œ", Width = 100, Height = 38, DialogResult = DialogResult.Cancel };
+        UiLayoutHelper.StyleActionButton(cancelButton, 100, 38);
+        footer.Controls.Add(importButton);
+        footer.Controls.Add(cancelButton);
+        footer.Controls.Add(_summaryLabel);
+        _summaryLabel.AutoSize = true;
+        _summaryLabel.Margin = new Padding(18, 10, 0, 0);
+
+        root.Controls.Add(filePanel, 0, 0);
+        root.Controls.Add(mappingHost, 0, 1);
+        root.Controls.Add(_previewGrid, 0, 2);
+        root.Controls.Add(footer, 0, 3);
+
+        Controls.Add(root);
+        CancelButton = cancelButton;
+    }
+
+    private void AddMappingRow(TableLayoutPanel layout, int index, CsvFieldType fieldType, string caption)
+    {
+        var row = index / 4;
+        if (layout.RowCount <= row)
+        {
+            layout.RowCount = row + 1;
+            layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        }
+
+        var column = (index % 4);
+        var panel = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2
+        };
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+        var combo = new ComboBox
+        {
+            Dock = DockStyle.Fill,
+            DropDownStyle = ComboBoxStyle.DropDownList
+        };
+        _mappingBoxes[fieldType] = combo;
+
+        panel.Controls.Add(new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = caption,
+            TextAlign = ContentAlignment.MiddleRight
+        }, 0, 0);
+        panel.Controls.Add(combo, 1, 0);
+        layout.Controls.Add(panel, column, row);
+    }
+
+    private void BrowseFile()
+    {
+        using var dialog = new OpenFileDialog
+        {
+            Filter = "CSV files (*.csv)|*.csv",
+            Title = "×‘×—×™×¨×ª ×§×•×‘×¥ CSV"
+        };
+
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        _filePathTextBox.Text = dialog.FileName;
+        LoadColumns(dialog.FileName);
+    }
+
+    public void AutomationLoadPreview(string filePath)
+    {
+        _filePathTextBox.Text = filePath;
+        LoadColumns(filePath);
+        LoadPreview();
+    }
+
+    public int AutomationImport()
+    {
+        if (_lastPreview is null)
+        {
+            LoadPreview();
+        }
+
+        var imported = _database.ImportCsvWithMapping(_filePathTextBox.Text, BuildMapping());
+        DialogResult = DialogResult.OK;
+        Close();
+        return imported;
+    }
+
+    private void LoadColumns(string filePath)
+    {
+        var rows = CsvUtility.ReadRows(filePath);
+        if (rows.Count == 0)
+        {
+            throw new InvalidOperationException("×§×•×‘×¥ ×”-CSV ×¨×™×§.");
+        }
+
+        _columnNames = (_hasHeaderCheckBox.Checked ? rows[0] : rows[0].Select((_, index) => $"×¢×ž×•×“×” {index + 1}").ToArray());
+        foreach (var pair in _mappingBoxes)
+        {
+            var combo = pair.Value;
+            combo.Items.Clear();
+            combo.Items.Add(new ColumnChoice(-1, "×œ× ×œ×ž×¤×•×ª"));
+            for (var index = 0; index < _columnNames.Length; index++)
+            {
+                combo.Items.Add(new ColumnChoice(index, _columnNames[index]));
+            }
+
+            combo.SelectedIndex = 0;
+        }
+
+        AutoMapColumns();
+    }
+
+    private void AutoMapColumns()
+    {
+        MapByKeyword(CsvFieldType.Topic, ["× ×•×©×", "topic"]);
+        MapByKeyword(CsvFieldType.Question, ["×©××œ×”", "question"]);
+        MapByKeyword(CsvFieldType.Answer, ["×ª×©×•×‘×”", "answer"]);
+        MapByKeyword(CsvFieldType.Book, ["×¡×¤×¨", "book"]);
+        MapByKeyword(CsvFieldType.Chapter, ["×¤×¨×§", "chapter"]);
+        MapByKeyword(CsvFieldType.Verse, ["×¤×¡×•×§", "verse"]);
+        MapByKeyword(CsvFieldType.Difficulty, ["×§×•×©×™", "difficulty"]);
+        MapByKeyword(CsvFieldType.Tags, ["×ª×’×™×•×ª", "tags"]);
+    }
+
+    private void MapByKeyword(CsvFieldType fieldType, string[] keywords)
+    {
+        if (_columnNames.Length == 0)
+        {
+            return;
+        }
+
+        for (var index = 0; index < _columnNames.Length; index++)
+        {
+            if (keywords.Any(keyword => _columnNames[index].Contains(keyword, StringComparison.OrdinalIgnoreCase)))
+            {
+                _mappingBoxes[fieldType].SelectedIndex = index + 1;
+                return;
+            }
+        }
+    }
+
+    private void LoadPreview()
+    {
+        if (!File.Exists(_filePathTextBox.Text))
+        {
+            MessageBox.Show(this, "×™×© ×œ×‘×—×•×¨ ×§×•×‘×¥ CSV ×ª×§×™×Ÿ.", "×§×•×‘×¥ ×—×¡×¨", MessageBoxButtons.OK, MessageBoxIcon.Warning, MessageBoxDefaultButton.Button1, MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+            return;
+        }
+
+        if (_columnNames.Length == 0)
+        {
+            LoadColumns(_filePathTextBox.Text);
+        }
+
+        var mapping = BuildMapping();
+        _lastPreview = _database.PreviewCsvImport(_filePathTextBox.Text, mapping);
+
+        _previewGrid.DataSource = _lastPreview.Rows.Select(row => new
+        {
+            ×©×•×¨×” = row.RowNumber,
+            ×ª×§×™×Ÿ = row.IsValid ? "×›×Ÿ" : "×œ×",
+            × ×•×©× = row.Topic,
+            ×ž×™×§×•× = row.SubjectPath,
+            ×§×•×©×™ = row.Difficulty,
+            ×ª×’×™×•×ª = row.Tags,
+            ×¡×™×‘×” = row.Reason
+        }).ToList();
+
+        _summaryLabel.Text = $"×™×ª×§×‘×œ×•: {_lastPreview.AcceptedCount} | ×™×™×“×—×•: {_lastPreview.RejectedCount}";
+    }
+
+    private void ExecuteImport()
+    {
+        if (_lastPreview is null)
+        {
+            LoadPreview();
+        }
+
+        if (_lastPreview is null)
+        {
+            return;
+        }
+
+        var imported = _database.ImportCsvWithMapping(_filePathTextBox.Text, BuildMapping());
+        MessageBox.Show(
+            this,
+            $"×™×™×‘×•× ×”×•×©×œ×. × ×•×¡×¤×• {imported} ×›×¨×˜×™×¡×™×.",
+            "×™×™×‘×•× CSV",
+            MessageBoxButtons.OK,
+            MessageBoxIcon.Information,
+            MessageBoxDefaultButton.Button1,
+            MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+        DialogResult = DialogResult.OK;
+        Close();
+    }
+
+    private CsvImportMapping BuildMapping()
+    {
+        var map = new Dictionary<int, CsvFieldType>();
+        foreach (var pair in _mappingBoxes)
+        {
+            if (pair.Value.SelectedItem is ColumnChoice choice && choice.Index >= 0)
+            {
+                map[choice.Index] = pair.Key;
+            }
+        }
+
+        return new CsvImportMapping
+        {
+            ColumnMappings = map,
+            FallbackSubjectId = _fallbackSubjectId,
+            HasHeaderRow = _hasHeaderCheckBox.Checked
+        };
+    }
+
+    private sealed record ColumnChoice(int Index, string Name)
+    {
+        public override string ToString() => Name;
+    }
+}
+
+
+========================================================================================================================
+C:\CodexProjects\Tracker\TrackerApp\AddStudyItemForm.cs
+========================================================================================================================
+namespace TrackerApp;
+
+public sealed class AddStudyItemForm : Form
+{
+    private readonly ComboBox _subjectComboBox = new();
+    private readonly ComboBox _difficultyComboBox = new();
+    private readonly TextBox _topicTextBox = new();
+    private readonly TextBox _questionTextBox = new();
+    private readonly TextBox _answerTextBox = new();
+    private readonly CheckedListBox _tagsListBox = new();
+    private readonly Label _emptyTagsLabel = new();
+    private readonly Label _tagsSummaryLabel = new();
+    private readonly Func<IReadOnlyList<TagModel>> _tagLoader;
+    private readonly Func<IWin32Window, string?, TagModel?>? _tagCreator;
+    private readonly bool _isEditMode;
+
+    public AddStudyItemForm(
+        IReadOnlyList<SubjectNodeModel> subjects,
+        IReadOnlyList<TagModel> tags,
+        int? initialSubjectId,
+        StudyItemModel? existingItem = null,
+        Func<IReadOnlyList<TagModel>>? tagLoader = null,
+        Func<IWin32Window, string?, TagModel?>? tagCreator = null)
+    {
+        _isEditMode = existingItem is not null;
+        _tagLoader = tagLoader ?? (() => tags);
+        _tagCreator = tagCreator;
+
+        Text = _isEditMode ? "×¢×¨×™×›×ª ×›×¨×˜×™×¡" : "×›×¨×˜×™×¡ ×—×“×©";
+        StartPosition = FormStartPosition.CenterParent;
+        FormBorderStyle = FormBorderStyle.FixedDialog;
+        MaximizeBox = false;
+        MinimizeBox = false;
+        ShowInTaskbar = false;
+        ClientSize = new Size(780, 672);
+        BackColor = ClassicPalette.PanelBackground;
+        RightToLeft = RightToLeft.Yes;
+        RightToLeftLayout = false;
+        UiLayoutHelper.ApplyFormDefaults(this);
+
+        BuildLayout(subjects, tags, initialSubjectId, existingItem);
+        UiLayoutHelper.ApplyRecursive(this);
+    }
+
+    public int SelectedSubjectId => ((SubjectChoice)_subjectComboBox.SelectedItem!).Id;
+    public string Topic => _topicTextBox.Text.Trim();
+    public string Question => _questionTextBox.Text.Trim();
+    public string Answer => _answerTextBox.Text.Trim();
+    public StudyDifficulty? SelectedDifficulty =>
+        _difficultyComboBox.SelectedItem is DifficultyChoice choice && choice.Difficulty != StudyDifficulty.Any
+            ? choice.Difficulty
+            : null;
+
+    public IReadOnlyList<int> SelectedTagIds =>
+        _tagsListBox.CheckedItems.OfType<TagModel>().Select(tag => tag.Id).OrderBy(id => id).ToArray();
+
+    public bool HasVisibleTags => _tagsListBox.Items.Count > 0;
+
+    public bool HasTagNamed(string tagName) =>
+        _tagsListBox.Items.OfType<TagModel>().Any(tag => string.Equals(tag.Name, tagName, StringComparison.OrdinalIgnoreCase));
+
+    public bool IsTagChecked(int tagId) =>
+        _tagsListBox.CheckedItems.OfType<TagModel>().Any(tag => tag.Id == tagId);
+
+    public TagModel? AutomationCreateTag(string tagName)
+    {
+        if (_tagCreator is null)
+        {
+            return null;
+        }
+
+        var selectedIds = SelectedTagIds.ToHashSet();
+        var createdTag = _tagCreator(this, tagName);
+        if (createdTag is null)
+        {
+            return null;
+        }
+
+        selectedIds.Add(createdTag.Id);
+        ReloadTags(selectedIds);
+        return createdTag;
+    }
+
+    public bool AutomationSelectTag(string tagName)
+    {
+        for (var index = 0; index < _tagsListBox.Items.Count; index++)
+        {
+            if (_tagsListBox.Items[index] is TagModel tag &&
+                string.Equals(tag.Name, tagName, StringComparison.OrdinalIgnoreCase))
+            {
+                _tagsListBox.SetItemChecked(index, true);
+                UpdateTagsState();
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    protected override void OnFormClosing(FormClosingEventArgs e)
+    {
+        if (DialogResult == DialogResult.OK)
+        {
+            if (_subjectComboBox.SelectedItem is null ||
+                string.IsNullOrWhiteSpace(_topicTextBox.Text) ||
+                string.IsNullOrWhiteSpace(_questionTextBox.Text) ||
+                string.IsNullOrWhiteSpace(_answerTextBox.Text))
+            {
+                MessageBox.Show(
+                    this,
+                    "×™×© ×œ×ž×œ× ×ž×™×§×•× ×‘×¡×¤×¨×™×™×”, × ×•×©×, ×©××œ×” ×•×ª×©×•×‘×”.",
+                    "×©×“×•×ª ×—×¡×¨×™×",
+                    MessageBoxButtons.OK,
+                    MessageBoxIcon.Warning,
+                    MessageBoxDefaultButton.Button1,
+                    MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+                e.Cancel = true;
+            }
+        }
+
+        base.OnFormClosing(e);
+    }
+
+    private void BuildLayout(IReadOnlyList<SubjectNodeModel> subjects, IReadOnlyList<TagModel> tags, int? initialSubjectId, StudyItemModel? existingItem)
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 7,
+            Padding = new Padding(12)
+        };
+
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140F));
+        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 154F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 194F));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+
+        _subjectComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _subjectComboBox.Dock = DockStyle.Fill;
+        foreach (var subject in subjects)
+        {
+            var display = string.IsNullOrWhiteSpace(subject.DisplayPath) ? subject.Name : subject.DisplayPath;
+            _subjectComboBox.Items.Add(new SubjectChoice(subject.Id, display.Replace(" > ", " / ", StringComparison.Ordinal)));
+        }
+
+        if (_subjectComboBox.Items.Count > 0)
+        {
+            _subjectComboBox.SelectedIndex = 0;
+        }
+
+        var targetSubjectId = existingItem?.SubjectId ?? initialSubjectId;
+        if (targetSubjectId.HasValue)
+        {
+            for (var index = 0; index < _subjectComboBox.Items.Count; index++)
+            {
+                if (_subjectComboBox.Items[index] is SubjectChoice choice && choice.Id == targetSubjectId.Value)
+                {
+                    _subjectComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+
+        _difficultyComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
+        _difficultyComboBox.Dock = DockStyle.Fill;
+        _difficultyComboBox.Items.AddRange(
+        [
+            new DifficultyChoice(StudyDifficulty.Any, "×œ×œ× ×§×•×©×™ ×™×“× ×™"),
+            new DifficultyChoice(StudyDifficulty.Hard, "×§×©×”"),
+            new DifficultyChoice(StudyDifficulty.Medium, "×‘×™× ×•× ×™×ª"),
+            new DifficultyChoice(StudyDifficulty.Easy, "×§×œ×”")
+        ]);
+        _difficultyComboBox.SelectedIndex = 0;
+        if (existingItem is not null && Enum.TryParse<StudyDifficulty>(existingItem.ManualDifficulty, true, out var parsed))
+        {
+            for (var index = 0; index < _difficultyComboBox.Items.Count; index++)
+            {
+                if (_difficultyComboBox.Items[index] is DifficultyChoice choice && choice.Difficulty == parsed)
+                {
+                    _difficultyComboBox.SelectedIndex = index;
+                    break;
+                }
+            }
+        }
+
+        _topicTextBox.Dock = DockStyle.Fill;
+        _topicTextBox.RightToLeft = RightToLeft.Yes;
+        _topicTextBox.Text = existingItem?.Topic ?? string.Empty;
+
+        ConfigureMultilineBox(_questionTextBox, existingItem?.Question);
+        ConfigureMultilineBox(_answerTextBox, existingItem?.Answer);
+
+        root.Controls.Add(CreatePromptLabel("×ž×™×§×•×"), 0, 0);
+        root.Controls.Add(_subjectComboBox, 1, 0);
+        root.Controls.Add(CreatePromptLabel("× ×•×©×"), 0, 1);
+        root.Controls.Add(_topicTextBox, 1, 1);
+        root.Controls.Add(CreatePromptLabel("×§×•×©×™"), 0, 2);
+        root.Controls.Add(_difficultyComboBox, 1, 2);
+        root.Controls.Add(CreatePromptLabel("×©××œ×”"), 0, 3);
+        root.Controls.Add(_questionTextBox, 1, 3);
+        root.Controls.Add(CreatePromptLabel("×ª×©×•×‘×”"), 0, 4);
+        root.Controls.Add(_answerTextBox, 1, 4);
+
+        var bottomLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1
+        };
+        bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 196F));
+
+        var tagsGroup = BuildTagsGroup(tags, existingItem?.Tags.Select(tag => tag.Id).ToHashSet() ?? []);
+
+        var buttonPanel = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            Padding = new Padding(0, 8, 0, 0)
+        };
+
+        var okButton = new Button
+        {
+            Text = _isEditMode ? "×©×ž×•×¨ ×©×™× ×•×™×™×" : "×©×ž×•×¨",
+            DialogResult = DialogResult.OK,
+            Width = 124,
+            Height = 38
+        };
+        UiLayoutHelper.StyleActionButton(okButton, 124, 38);
+
+        var cancelButton = new Button
+        {
+            Text = "×‘×™×˜×•×œ",
+            DialogResult = DialogResult.Cancel,
+            Width = 108,
+            Height = 38
+        };
+        UiLayoutHelper.StyleActionButton(cancelButton, 108, 38);
+
+        buttonPanel.Controls.Add(okButton);
+        buttonPanel.Controls.Add(cancelButton);
+        bottomLayout.Controls.Add(tagsGroup, 0, 0);
+        bottomLayout.Controls.Add(buttonPanel, 1, 0);
+        root.Controls.Add(bottomLayout, 1, 5);
+
+        Controls.Add(root);
+        AcceptButton = okButton;
+        CancelButton = cancelButton;
+    }
+
+    private GroupBox BuildTagsGroup(IReadOnlyList<TagModel> tags, IReadOnlyCollection<int> selectedTagIds)
+    {
+        var tagsGroup = new GroupBox
+        {
+            Dock = DockStyle.Fill,
+            Text = "×ª×’×™×•×ª",
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var tagsToolbar = new FlowLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            Height = 40,
+            FlowDirection = FlowDirection.RightToLeft,
+            WrapContents = true,
+            Padding = new Padding(0, 0, 0, 2)
+        };
+
+        var addTagButton = new Button
+        {
+            Text = "×”×•×¡×£ ×ª×’×™×ª",
+            Width = 120,
+            Height = 36
+        };
+        UiLayoutHelper.StyleActionButton(addTagButton, 120, 36);
+        addTagButton.Click += (_, _) => HandleAddTag();
+
+        var refreshTagsButton = new Button
+        {
+            Text = "×¨×¢× ×Ÿ ×ª×’×™×•×ª",
+            Width = 120,
+            Height = 36
+        };
+        UiLayoutHelper.StyleActionButton(refreshTagsButton, 120, 36);
+        refreshTagsButton.Click += (_, _) => ReloadTags(SelectedTagIds);
+
+        tagsToolbar.Controls.Add(addTagButton);
+        tagsToolbar.Controls.Add(refreshTagsButton);
+
+        var tagsContent = new Panel
+        {
+            Dock = DockStyle.Fill,
+            BackColor = Color.White,
+            BorderStyle = BorderStyle.FixedSingle
+        };
+
+        _tagsListBox.Dock = DockStyle.Fill;
+        _tagsListBox.CheckOnClick = true;
+        _tagsListBox.BorderStyle = BorderStyle.None;
+        _tagsListBox.ItemCheck += (_, _) =>
+        {
+            if (IsHandleCreated)
+            {
+                BeginInvoke(new Action(UpdateTagsState));
+            }
+            else
+            {
+                UpdateTagsState();
+            }
+        };
+
+        _emptyTagsLabel.Dock = DockStyle.Fill;
+        _emptyTagsLabel.TextAlign = ContentAlignment.MiddleCenter;
+        _emptyTagsLabel.Text =
+            "××™×Ÿ ×ª×’×™×•×ª ×¢×“×™×™×Ÿ." + Environment.NewLine +
+            "×œ×—×¦×• ×¢×œ \"×”×•×¡×£ ×ª×’×™×ª\" ×›×“×™ ×œ×™×¦×•×¨ ×ª×’×™×ª ×—×“×©×”.";
+        _emptyTagsLabel.RightToLeft = RightToLeft.Yes;
+
+        _tagsSummaryLabel.Dock = DockStyle.Fill;
+        _tagsSummaryLabel.TextAlign = ContentAlignment.MiddleRight;
+        _tagsSummaryLabel.RightToLeft = RightToLeft.Yes;
+
+        _tagsSummaryLabel.Dock = DockStyle.Bottom;
+        _tagsSummaryLabel.Height = 22;
+
+        tagsContent.Controls.Add(_tagsListBox);
+        tagsContent.Controls.Add(_emptyTagsLabel);
+        tagsGroup.Controls.Add(tagsContent);
+        tagsGroup.Controls.Add(_tagsSummaryLabel);
+        tagsGroup.Controls.Add(tagsToolbar);
+
+        PopulateTags(tags, selectedTagIds);
+        return tagsGroup;
+    }
+
+    private void HandleAddTag()
+    {
+        if (_tagCreator is null)
+        {
+            MessageBox.Show(
+                this,
+                "×œ× ×”×•×’×“×¨ ×ž×¡×œ×•×œ ×™×¦×™×¨×ª ×ª×’×™×•×ª ×ž×ª×•×š ×—×œ×•×Ÿ ×–×”.",
+                "×™×¦×™×¨×ª ×ª×’×™×ª ××™× ×” ×–×ž×™× ×”",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Information,
+                MessageBoxDefaultButton.Button1,
+                MessageBoxOptions.RtlReading | MessageBoxOptions.RightAlign);
+            return;
+        }
+
+        var selectedIds = SelectedTagIds.ToHashSet();
+        var createdTag = _tagCreator(this, null);
+        if (createdTag is null)
+        {
+            return;
+        }
+
+        selectedIds.Add(createdTag.Id);
+        ReloadTags(selectedIds);
+    }
+
+    private void ReloadTags(IReadOnlyCollection<int> selectedTagIds)
+    {
+        PopulateTags(_tagLoader(), selectedTagIds);
+    }
+
+    private void PopulateTags(IReadOnlyList<TagModel> tags, IReadOnlyCollection<int> selectedTagIds)
+    {
+        _tagsListBox.BeginUpdate();
+        _tagsListBox.Items.Clear();
+        foreach (var tag in tags)
+        {
+            var index = _tagsListBox.Items.Add(tag);
+            if (selectedTagIds.Contains(tag.Id))
+            {
+                _tagsListBox.SetItemChecked(index, true);
+            }
+        }
+
+        _tagsListBox.EndUpdate();
+        UpdateTagsState();
+    }
+
+    private void UpdateTagsState()
+    {
+        var totalTags = _tagsListBox.Items.Count;
+        var selectedCount = _tagsListBox.CheckedItems.Count;
+        var hasTags = totalTags > 0;
+
+        _tagsListBox.Visible = hasTags;
+        _emptyTagsLabel.Visible = !hasTags;
+        _tagsSummaryLabel.Text = hasTags
+            ? $"×–×ž×™× ×•×ª {totalTags} ×ª×’×™×•×ª | × ×‘×—×¨×• {selectedCount}"
+            : "××™×Ÿ ×ª×’×™×•×ª ×–×ž×™× ×•×ª ×›×¨×’×¢.";
+    }
+
+    private static Label CreatePromptLabel(string text)
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = text,
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
+    private static void ConfigureMultilineBox(TextBox textBox, string? value)
+    {
+        textBox.Dock = DockStyle.Fill;
+        textBox.Multiline = true;
+        textBox.ScrollBars = ScrollBars.Vertical;
+        textBox.BorderStyle = BorderStyle.FixedSingle;
+        textBox.RightToLeft = RightToLeft.Yes;
+        textBox.Text = value ?? string.Empty;
+    }
+
+    private sealed record SubjectChoice(int Id, string DisplayName)
+    {
+        public override string ToString() => DisplayName;
+    }
+
+    private sealed record DifficultyChoice(StudyDifficulty Difficulty, string DisplayName)
+    {
+        public override string ToString() => DisplayName;
+    }
+}
+
+

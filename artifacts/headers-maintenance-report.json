@@ -1,0 +1,133 @@
+{
+  "Success": true,
+  "ButtonCount": 5,
+  "Buttons": [
+    {
+      "Text": "\u05D1\u05D3\u05D9\u05E7\u05D4 \u05D5\u05EA\u05D9\u05E7\u05D5\u05DF",
+      "Bounds": {
+        "Location": {
+          "IsEmpty": false,
+          "X": 8,
+          "Y": 8
+        },
+        "Size": {
+          "IsEmpty": false,
+          "Width": 784,
+          "Height": 84
+        },
+        "X": 8,
+        "Y": 8,
+        "Width": 784,
+        "Height": 84,
+        "Left": 8,
+        "Top": 8,
+        "Right": 792,
+        "Bottom": 92,
+        "IsEmpty": false
+      },
+      "FullyVisible": true
+    },
+    {
+      "Text": "\u05E6\u05D5\u05E8 \u05D2\u05D9\u05D1\u05D5\u05D9",
+      "Bounds": {
+        "Location": {
+          "IsEmpty": false,
+          "X": 8,
+          "Y": 112
+        },
+        "Size": {
+          "IsEmpty": false,
+          "Width": 784,
+          "Height": 84
+        },
+        "X": 8,
+        "Y": 112,
+        "Width": 784,
+        "Height": 84,
+        "Left": 8,
+        "Top": 112,
+        "Right": 792,
+        "Bottom": 196,
+        "IsEmpty": false
+      },
+      "FullyVisible": true
+    },
+    {
+      "Text": "\u05E9\u05D7\u05D6\u05E8 \u05DE\u05D2\u05D9\u05D1\u05D5\u05D9",
+      "Bounds": {
+        "Location": {
+          "IsEmpty": false,
+          "X": 8,
+          "Y": 216
+        },
+        "Size": {
+          "IsEmpty": false,
+          "Width": 784,
+          "Height": 84
+        },
+        "X": 8,
+        "Y": 216,
+        "Width": 784,
+        "Height": 84,
+        "Left": 8,
+        "Top": 216,
+        "Right": 792,
+        "Bottom": 300,
+        "IsEmpty": false
+      },
+      "FullyVisible": true
+    },
+    {
+      "Text": "\u05D0\u05D9\u05E4\u05D5\u05E1 \u05E0\u05EA\u05D5\u05E0\u05D9 \u05DE\u05E9\u05EA\u05DE\u05E9",
+      "Bounds": {
+        "Location": {
+          "IsEmpty": false,
+          "X": 8,
+          "Y": 320
+        },
+        "Size": {
+          "IsEmpty": false,
+          "Width": 784,
+          "Height": 84
+        },
+        "X": 8,
+        "Y": 320,
+        "Width": 784,
+        "Height": 84,
+        "Left": 8,
+        "Top": 320,
+        "Right": 792,
+        "Bottom": 404,
+        "IsEmpty": false
+      },
+      "FullyVisible": true
+    },
+    {
+      "Text": "\u05E8\u05E2\u05E0\u05DF \u05E0\u05EA\u05D5\u05E0\u05D9\u05DD",
+      "Bounds": {
+        "Location": {
+          "IsEmpty": false,
+          "X": 8,
+          "Y": 424
+        },
+        "Size": {
+          "IsEmpty": false,
+          "Width": 784,
+          "Height": 112
+        },
+        "X": 8,
+        "Y": 424,
+        "Width": 784,
+        "Height": 112,
+        "Left": 8,
+        "Top": 424,
+        "Right": 792,
+        "Bottom": 536,
+        "IsEmpty": false
+      },
+      "FullyVisible": true
+    }
+  ],
+  "AllButtonsFullyVisible": true,
+  "Screenshot": "C:\\CodexProjects\\Tracker\\artifacts\\headers-maintenance.png"
+}

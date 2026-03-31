@@ -1,0 +1,16 @@
+{
+  "ItemIds": [
+    4,
+    5,
+    6,
+    7
+  ],
+  "TotalItems": 4,
+  "FailedCount": 1,
+  "LowRatingsCount": 2,
+  "HighRatingsCount": 1,
+  "Success": true,
+  "Failure": null,
+  "SessionScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\review-session.png",
+  "SummaryScreenshot": "C:\\CodexProjects\\Tracker\\artifacts\\review-summary.png"
+}

@@ -1,0 +1,4 @@
+[17:23:58] System.InvalidOperationException: Ã—Â¦Ã—â€¢Ã—Å¾Ã—Âª Ã—ÂªÃ—Â "Ã—Å¡ Ã—Å“Ã—Â Ã—Â Ã—Å¾Ã—Â¦Ã—Â Ã—â€˜Ã—Â¢Ã—Â¥.
+   at TrackerApp.MainForm.RunCoreVerificationAsync(CoreVerificationRequest request) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 2300
+[17:26:25] System.InvalidOperationException: Ã—Â¦Ã—â€¢Ã—Å¾Ã—Âª Ã—ÂªÃ—Â "Ã—Å¡ Ã—Å“Ã—Â Ã—Â Ã—Å¾Ã—Â¦Ã—Â Ã—â€˜Ã—Â¢Ã—Â¥.
+   at TrackerApp.MainForm.RunCoreVerificationAsync(CoreVerificationRequest request) in C:\CodexProjects\Tracker\TrackerApp\MainForm.cs:line 2300
