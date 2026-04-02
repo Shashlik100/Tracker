@@ -15,7 +15,7 @@ public sealed class TagAssignmentForm : Form
         ClientSize = new Size(480, 480);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
         BuildLayout(itemTopic, availableTags, selectedTagIds);
         UiLayoutHelper.ApplyRecursive(this);
@@ -40,7 +40,8 @@ public sealed class TagAssignmentForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 3,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 58F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));

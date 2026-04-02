@@ -157,19 +157,38 @@ public sealed partial class AppDatabase
 
             var subjectPath = GetCell(row, header, hasHeader, 0, "SubjectPath");
             var topic = GetCell(row, header, hasHeader, 1, "Topic");
-            var question = GetCell(row, header, hasHeader, 2, "Question");
-            var answer = GetCell(row, header, hasHeader, 3, "Answer");
+            var sourceText = GetCell(row, header, hasHeader, 2, "SourceText");
+            if (string.IsNullOrWhiteSpace(sourceText))
+            {
+                sourceText = GetCell(row, header, hasHeader, 2, "Question");
+            }
+
+            var personalSummary = GetCell(row, header, hasHeader, 3, "PersonalSummary");
+            if (string.IsNullOrWhiteSpace(personalSummary))
+            {
+                personalSummary = GetCell(row, header, hasHeader, 3, "Answer");
+            }
 
             if (string.IsNullOrWhiteSpace(subjectPath) ||
                 string.IsNullOrWhiteSpace(topic) ||
-                string.IsNullOrWhiteSpace(question) ||
-                string.IsNullOrWhiteSpace(answer))
+                string.IsNullOrWhiteSpace(sourceText) ||
+                string.IsNullOrWhiteSpace(personalSummary))
             {
                 continue;
             }
 
             var subjectId = EnsureSubjectPath(connection, transaction, SplitPath(subjectPath));
-            InsertStudyItem(connection, transaction, subjectId, topic, question, answer, DateTime.Now);
+            InsertStudyItem(
+                connection,
+                transaction,
+                new StudyItemDraftModel
+                {
+                    SubjectId = subjectId,
+                    Topic = topic,
+                    SourceText = sourceText,
+                    PersonalSummary = personalSummary
+                },
+                DateTime.Now);
             imported++;
         }
 
@@ -182,7 +201,11 @@ public sealed partial class AppDatabase
     {
         var rows = new List<string[]>
         {
-            new[] { "Id", "SubjectPath", "Topic", "Question", "Answer", "DueDate", "EaseFactor", "IntervalDays", "RepetitionCount", "LastRating" }
+            new[]
+            {
+                "Id", "SubjectPath", "Topic", "SourceText", "PshatText", "KushyaText", "TerutzText", "ChidushText", "PersonalSummary", "ReviewNotes",
+                "DueDate", "EaseFactor", "IntervalDays", "RepetitionCount", "LastRating"
+            }
         };
 
         foreach (var item in GetStudyItemsForSubject(null))
@@ -193,8 +216,13 @@ public sealed partial class AppDatabase
                     item.Id.ToString(CultureInfo.InvariantCulture),
                     item.SubjectPath,
                     item.Topic,
-                    item.Question,
-                    item.Answer,
+                    item.SourceText,
+                    item.PshatText,
+                    item.KushyaText,
+                    item.TerutzText,
+                    item.ChidushText,
+                    item.PersonalSummary,
+                    item.ReviewNotes,
                     item.DueDate.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture),
                     item.EaseFactor.ToString("0.00", CultureInfo.InvariantCulture),
                     item.IntervalDays.ToString("0.##", CultureInfo.InvariantCulture),
@@ -284,13 +312,7 @@ public sealed partial class AppDatabase
     {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
-        command.CommandText =
-            """
-            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
-                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
-            FROM StudyItems
-            WHERE Id = $itemId;
-            """;
+        command.CommandText = $"SELECT {StudyItemSelectColumns} FROM StudyItems WHERE Id = $itemId;";
         command.Parameters.AddWithValue("$itemId", itemId);
 
         using var reader = command.ExecuteReader();
@@ -346,20 +368,25 @@ public sealed partial class AppDatabase
             SubjectPath = GetSubjectPath(subjectId),
             RootCategory = GetRootCategory(subjectId),
             Topic = reader.GetString(2),
-            Question = reader.GetString(3),
-            Answer = reader.GetString(4),
-            CreatedAt = ParseDate(reader.GetString(5)),
-            ModifiedAt = ParseDate(reader.GetString(6)),
-            DueDate = ParseDate(reader.GetString(7)),
-            Level = reader.GetInt32(8),
-            TotalReviews = reader.GetInt32(9),
-            RepetitionCount = reader.GetInt32(10),
-            Lapses = reader.GetInt32(11),
-            EaseFactor = reader.GetDouble(12),
-            IntervalDays = reader.GetDouble(13),
-            LastRating = reader.GetString(14),
-            LastReviewedAt = reader.IsDBNull(15) ? null : ParseDate(reader.GetString(15)),
-            ManualDifficulty = reader.IsDBNull(16) ? string.Empty : reader.GetString(16)
+            SourceText = reader.IsDBNull(5) ? reader.GetString(3) : reader.GetString(5),
+            PshatText = reader.IsDBNull(6) ? string.Empty : reader.GetString(6),
+            KushyaText = reader.IsDBNull(7) ? string.Empty : reader.GetString(7),
+            TerutzText = reader.IsDBNull(8) ? string.Empty : reader.GetString(8),
+            ChidushText = reader.IsDBNull(9) ? string.Empty : reader.GetString(9),
+            PersonalSummary = reader.IsDBNull(10) ? reader.GetString(4) : reader.GetString(10),
+            ReviewNotes = reader.IsDBNull(11) ? string.Empty : reader.GetString(11),
+            CreatedAt = ParseDate(reader.GetString(12)),
+            ModifiedAt = ParseDate(reader.GetString(13)),
+            DueDate = ParseDate(reader.GetString(14)),
+            Level = reader.GetInt32(15),
+            TotalReviews = reader.GetInt32(16),
+            RepetitionCount = reader.GetInt32(17),
+            Lapses = reader.GetInt32(18),
+            EaseFactor = reader.GetDouble(19),
+            IntervalDays = reader.GetDouble(20),
+            LastRating = reader.GetString(21),
+            LastReviewedAt = reader.IsDBNull(22) ? null : ParseDate(reader.GetString(22)),
+            ManualDifficulty = reader.IsDBNull(23) ? string.Empty : reader.GetString(23)
         };
     }
 
@@ -403,8 +430,13 @@ public sealed partial class AppDatabase
             {
                 SubjectPath = item.SubjectPath,
                 Topic = item.Topic,
-                Question = item.Question,
-                Answer = item.Answer,
+                SourceText = item.SourceText,
+                PshatText = item.PshatText,
+                KushyaText = item.KushyaText,
+                TerutzText = item.TerutzText,
+                ChidushText = item.ChidushText,
+                PersonalSummary = item.PersonalSummary,
+                ReviewNotes = item.ReviewNotes,
                 DueDate = item.DueDate
             })
             .ToList();

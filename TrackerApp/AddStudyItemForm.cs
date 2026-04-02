@@ -5,8 +5,13 @@ public sealed class AddStudyItemForm : Form
     private readonly ComboBox _subjectComboBox = new();
     private readonly ComboBox _difficultyComboBox = new();
     private readonly TextBox _topicTextBox = new();
-    private readonly TextBox _questionTextBox = new();
-    private readonly TextBox _answerTextBox = new();
+    private readonly TextBox _sourceTextBox = new();
+    private readonly TextBox _pshatTextBox = new();
+    private readonly TextBox _kushyaTextBox = new();
+    private readonly TextBox _terutzTextBox = new();
+    private readonly TextBox _chidushTextBox = new();
+    private readonly TextBox _personalSummaryTextBox = new();
+    private readonly TextBox _reviewNotesTextBox = new();
     private readonly CheckedListBox _tagsListBox = new();
     private readonly Label _emptyTagsLabel = new();
     private readonly Label _tagsSummaryLabel = new();
@@ -26,16 +31,16 @@ public sealed class AddStudyItemForm : Form
         _tagLoader = tagLoader ?? (() => tags);
         _tagCreator = tagCreator;
 
-        Text = _isEditMode ? "עריכת כרטיס" : "כרטיס חדש";
+        Text = _isEditMode ? "עריכת יחידת לימוד" : "יחידת לימוד חדשה";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(820, 712);
+        ClientSize = new Size(920, 860);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
 
         BuildLayout(subjects, tags, initialSubjectId, existingItem);
@@ -44,12 +49,33 @@ public sealed class AddStudyItemForm : Form
 
     public int SelectedSubjectId => ((SubjectChoice)_subjectComboBox.SelectedItem!).Id;
     public string Topic => _topicTextBox.Text.Trim();
-    public string Question => _questionTextBox.Text.Trim();
-    public string Answer => _answerTextBox.Text.Trim();
+    public string SourceText => _sourceTextBox.Text.Trim();
+    public string PshatText => _pshatTextBox.Text.Trim();
+    public string KushyaText => _kushyaTextBox.Text.Trim();
+    public string TerutzText => _terutzTextBox.Text.Trim();
+    public string ChidushText => _chidushTextBox.Text.Trim();
+    public string PersonalSummary => _personalSummaryTextBox.Text.Trim();
+    public string ReviewNotes => _reviewNotesTextBox.Text.Trim();
+    public string Question => SourceText;
+    public string Answer => PersonalSummary;
     public StudyDifficulty? SelectedDifficulty =>
         _difficultyComboBox.SelectedItem is DifficultyChoice choice && choice.Difficulty != StudyDifficulty.Any
             ? choice.Difficulty
             : null;
+
+    public StudyItemDraftModel Draft => new()
+    {
+        SubjectId = SelectedSubjectId,
+        Topic = Topic,
+        SourceText = SourceText,
+        PshatText = PshatText,
+        KushyaText = KushyaText,
+        TerutzText = TerutzText,
+        ChidushText = ChidushText,
+        PersonalSummary = PersonalSummary,
+        ReviewNotes = ReviewNotes,
+        ManualDifficulty = SelectedDifficulty
+    };
 
     public IReadOnlyList<int> SelectedTagIds =>
         _tagsListBox.CheckedItems.OfType<TagModel>().Select(tag => tag.Id).OrderBy(id => id).ToArray();
@@ -101,14 +127,21 @@ public sealed class AddStudyItemForm : Form
     {
         if (DialogResult == DialogResult.OK)
         {
+            var hasCoreContent =
+                !string.IsNullOrWhiteSpace(SourceText) ||
+                !string.IsNullOrWhiteSpace(PshatText) ||
+                !string.IsNullOrWhiteSpace(KushyaText) ||
+                !string.IsNullOrWhiteSpace(TerutzText) ||
+                !string.IsNullOrWhiteSpace(ChidushText) ||
+                !string.IsNullOrWhiteSpace(PersonalSummary);
+
             if (_subjectComboBox.SelectedItem is null ||
-                string.IsNullOrWhiteSpace(_topicTextBox.Text) ||
-                string.IsNullOrWhiteSpace(_questionTextBox.Text) ||
-                string.IsNullOrWhiteSpace(_answerTextBox.Text))
+                string.IsNullOrWhiteSpace(Topic) ||
+                !hasCoreContent)
             {
                 MessageBox.Show(
                     this,
-                    "יש למלא מיקום בספרייה, נושא, שאלה ותשובה.",
+                    "יש למלא מיקום בספרייה, נושא, ולפחות אחד מאזורי הלימוד המרכזיים.",
                     "שדות חסרים",
                     MessageBoxButtons.OK,
                     MessageBoxIcon.Warning,
@@ -126,22 +159,138 @@ public sealed class AddStudyItemForm : Form
         var root = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 7,
-            Padding = new Padding(12)
+            ColumnCount = 1,
+            RowCount = 2,
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64F));
+
+        var scrollHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = ClassicPalette.PanelBackground
         };
 
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140F));
-        root.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 40F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 164F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 206F));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
+        var formLayout = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 2,
+            RowCount = 11,
+            RightToLeft = RightToLeft.Yes,
+            Padding = Padding.Empty,
+            Margin = Padding.Empty
+        };
 
+        formLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160F));
+        formLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+        formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 42F));
+        for (var index = 0; index < 8; index++)
+        {
+            formLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, index == 7 ? 148F : 110F));
+        }
+
+        ConfigureSubjectChoices(subjects, initialSubjectId, existingItem);
+        ConfigureDifficultyChoices(existingItem);
+
+        _topicTextBox.Dock = DockStyle.Fill;
+        _topicTextBox.Text = existingItem?.Topic ?? string.Empty;
+
+        ConfigureMultilineBox(_sourceTextBox, existingItem?.SourceText);
+        ConfigureMultilineBox(_pshatTextBox, existingItem?.PshatText);
+        ConfigureMultilineBox(_kushyaTextBox, existingItem?.KushyaText);
+        ConfigureMultilineBox(_terutzTextBox, existingItem?.TerutzText);
+        ConfigureMultilineBox(_chidushTextBox, existingItem?.ChidushText);
+        ConfigureMultilineBox(_personalSummaryTextBox, existingItem?.PersonalSummary);
+        ConfigureMultilineBox(_reviewNotesTextBox, existingItem?.ReviewNotes);
+
+        formLayout.Controls.Add(CreatePromptLabel("מיקום בספרייה"), 0, 0);
+        formLayout.Controls.Add(_subjectComboBox, 1, 0);
+        formLayout.Controls.Add(CreatePromptLabel("נושא"), 0, 1);
+        formLayout.Controls.Add(_topicTextBox, 1, 1);
+        formLayout.Controls.Add(CreatePromptLabel("קושי ידני"), 0, 2);
+        formLayout.Controls.Add(_difficultyComboBox, 1, 2);
+        formLayout.Controls.Add(CreatePromptLabel("מקור"), 0, 3);
+        formLayout.Controls.Add(_sourceTextBox, 1, 3);
+        formLayout.Controls.Add(CreatePromptLabel("פשט"), 0, 4);
+        formLayout.Controls.Add(_pshatTextBox, 1, 4);
+        formLayout.Controls.Add(CreatePromptLabel("קושיה"), 0, 5);
+        formLayout.Controls.Add(_kushyaTextBox, 1, 5);
+        formLayout.Controls.Add(CreatePromptLabel("תירוץ"), 0, 6);
+        formLayout.Controls.Add(_terutzTextBox, 1, 6);
+        formLayout.Controls.Add(CreatePromptLabel("חידוש"), 0, 7);
+        formLayout.Controls.Add(_chidushTextBox, 1, 7);
+        formLayout.Controls.Add(CreatePromptLabel("סיכום אישי"), 0, 8);
+        formLayout.Controls.Add(_personalSummaryTextBox, 1, 8);
+        formLayout.Controls.Add(CreatePromptLabel("הערות חזרה"), 0, 9);
+        formLayout.Controls.Add(_reviewNotesTextBox, 1, 9);
+
+        var tagsGroup = BuildTagsGroup(tags, existingItem?.Tags.Select(tag => tag.Id).ToHashSet() ?? []);
+        tagsGroup.Height = 148;
+        formLayout.Controls.Add(CreatePromptLabel("תגיות"), 0, 10);
+        formLayout.Controls.Add(tagsGroup, 1, 10);
+
+        scrollHost.Controls.Add(formLayout);
+
+        var footer = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 3,
+            RowCount = 1,
+            RightToLeft = RightToLeft.Yes
+        };
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 148F));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 132F));
+        footer.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
+
+        var okButton = new Button
+        {
+            Text = _isEditMode ? "שמור שינויים" : "שמור יחידת לימוד",
+            DialogResult = DialogResult.OK
+        };
+        UiLayoutHelper.StyleActionButton(okButton, 148, 40);
+        okButton.Dock = DockStyle.Fill;
+
+        var cancelButton = new Button
+        {
+            Text = "ביטול",
+            DialogResult = DialogResult.Cancel
+        };
+        UiLayoutHelper.StyleActionButton(cancelButton, 132, 40);
+        cancelButton.Dock = DockStyle.Fill;
+
+        var hintLabel = new Label
+        {
+            Dock = DockStyle.Fill,
+            Text = "מלאו את אזורי הלימוד הדרושים לכם. אזורים ריקים יוסתרו בתצוגת היחידה.",
+            TextAlign = ContentAlignment.MiddleRight,
+            RightToLeft = RightToLeft.Yes,
+            ForeColor = Color.FromArgb(54, 77, 77)
+        };
+
+        footer.Controls.Add(okButton, 0, 0);
+        footer.Controls.Add(cancelButton, 1, 0);
+        footer.Controls.Add(hintLabel, 2, 0);
+
+        root.Controls.Add(scrollHost, 0, 0);
+        root.Controls.Add(footer, 0, 1);
+
+        Controls.Add(root);
+        AcceptButton = okButton;
+        CancelButton = cancelButton;
+    }
+
+    private void ConfigureSubjectChoices(IReadOnlyList<SubjectNodeModel> subjects, int? initialSubjectId, StudyItemModel? existingItem)
+    {
         _subjectComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _subjectComboBox.Dock = DockStyle.Fill;
+
         foreach (var subject in subjects)
         {
             var display = string.IsNullOrWhiteSpace(subject.DisplayPath) ? subject.Name : subject.DisplayPath;
@@ -154,18 +303,23 @@ public sealed class AddStudyItemForm : Form
         }
 
         var targetSubjectId = existingItem?.SubjectId ?? initialSubjectId;
-        if (targetSubjectId.HasValue)
+        if (!targetSubjectId.HasValue)
         {
-            for (var index = 0; index < _subjectComboBox.Items.Count; index++)
-            {
-                if (_subjectComboBox.Items[index] is SubjectChoice choice && choice.Id == targetSubjectId.Value)
-                {
-                    _subjectComboBox.SelectedIndex = index;
-                    break;
-                }
-            }
+            return;
         }
 
+        for (var index = 0; index < _subjectComboBox.Items.Count; index++)
+        {
+            if (_subjectComboBox.Items[index] is SubjectChoice choice && choice.Id == targetSubjectId.Value)
+            {
+                _subjectComboBox.SelectedIndex = index;
+                break;
+            }
+        }
+    }
+
+    private void ConfigureDifficultyChoices(StudyItemModel? existingItem)
+    {
         _difficultyComboBox.DropDownStyle = ComboBoxStyle.DropDownList;
         _difficultyComboBox.Dock = DockStyle.Fill;
         _difficultyComboBox.Items.AddRange(
@@ -176,87 +330,20 @@ public sealed class AddStudyItemForm : Form
             new DifficultyChoice(StudyDifficulty.Easy, "קלה")
         ]);
         _difficultyComboBox.SelectedIndex = 0;
-        if (existingItem is not null && Enum.TryParse<StudyDifficulty>(existingItem.ManualDifficulty, true, out var parsed))
+
+        if (existingItem is null || !Enum.TryParse<StudyDifficulty>(existingItem.ManualDifficulty, true, out var parsed))
         {
-            for (var index = 0; index < _difficultyComboBox.Items.Count; index++)
-            {
-                if (_difficultyComboBox.Items[index] is DifficultyChoice choice && choice.Difficulty == parsed)
-                {
-                    _difficultyComboBox.SelectedIndex = index;
-                    break;
-                }
-            }
+            return;
         }
 
-        _topicTextBox.Dock = DockStyle.Fill;
-        _topicTextBox.RightToLeft = RightToLeft.Yes;
-        _topicTextBox.Text = existingItem?.Topic ?? string.Empty;
-
-        ConfigureMultilineBox(_questionTextBox, existingItem?.Question);
-        ConfigureMultilineBox(_answerTextBox, existingItem?.Answer);
-
-        root.Controls.Add(CreatePromptLabel("מיקום"), 0, 0);
-        root.Controls.Add(_subjectComboBox, 1, 0);
-        root.Controls.Add(CreatePromptLabel("נושא"), 0, 1);
-        root.Controls.Add(_topicTextBox, 1, 1);
-        root.Controls.Add(CreatePromptLabel("קושי"), 0, 2);
-        root.Controls.Add(_difficultyComboBox, 1, 2);
-        root.Controls.Add(CreatePromptLabel("שאלה"), 0, 3);
-        root.Controls.Add(_questionTextBox, 1, 3);
-        root.Controls.Add(CreatePromptLabel("תשובה"), 0, 4);
-        root.Controls.Add(_answerTextBox, 1, 4);
-
-        var bottomLayout = new TableLayoutPanel
+        for (var index = 0; index < _difficultyComboBox.Items.Count; index++)
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 2,
-            RowCount = 1
-        };
-        bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        bottomLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 220F));
-
-        var tagsGroup = BuildTagsGroup(tags, existingItem?.Tags.Select(tag => tag.Id).ToHashSet() ?? []);
-
-        var buttonPanel = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            ColumnCount = 1,
-            RowCount = 2,
-            Padding = new Padding(0, 8, 0, 0),
-            RightToLeft = RightToLeft.Yes
-        };
-        buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
-        buttonPanel.RowStyles.Add(new RowStyle(SizeType.Absolute, 46F));
-
-        var okButton = new Button
-        {
-            Text = _isEditMode ? "שמור שינויים" : "שמור",
-            DialogResult = DialogResult.OK,
-            Width = 124,
-            Height = 38
-        };
-        UiLayoutHelper.StyleActionButton(okButton, 124, 38);
-
-        var cancelButton = new Button
-        {
-            Text = "ביטול",
-            DialogResult = DialogResult.Cancel,
-            Width = 108,
-            Height = 38
-        };
-        UiLayoutHelper.StyleActionButton(cancelButton, 108, 38);
-
-        okButton.Dock = DockStyle.Fill;
-        cancelButton.Dock = DockStyle.Fill;
-        buttonPanel.Controls.Add(okButton, 0, 0);
-        buttonPanel.Controls.Add(cancelButton, 0, 1);
-        bottomLayout.Controls.Add(tagsGroup, 0, 0);
-        bottomLayout.Controls.Add(buttonPanel, 1, 0);
-        root.Controls.Add(bottomLayout, 1, 5);
-
-        Controls.Add(root);
-        AcceptButton = okButton;
-        CancelButton = cancelButton;
+            if (_difficultyComboBox.Items[index] is DifficultyChoice choice && choice.Difficulty == parsed)
+            {
+                _difficultyComboBox.SelectedIndex = index;
+                break;
+            }
+        }
     }
 
     private GroupBox BuildTagsGroup(IReadOnlyList<TagModel> tags, IReadOnlyCollection<int> selectedTagIds)
@@ -325,14 +412,10 @@ public sealed class AddStudyItemForm : Form
         _emptyTagsLabel.Text =
             "אין תגיות עדיין." + Environment.NewLine +
             "לחצו על \"הוסף תגית\" כדי ליצור תגית חדשה.";
-        _emptyTagsLabel.RightToLeft = RightToLeft.Yes;
-
-        _tagsSummaryLabel.Dock = DockStyle.Fill;
-        _tagsSummaryLabel.TextAlign = ContentAlignment.MiddleRight;
-        _tagsSummaryLabel.RightToLeft = RightToLeft.Yes;
 
         _tagsSummaryLabel.Dock = DockStyle.Bottom;
         _tagsSummaryLabel.Height = 22;
+        _tagsSummaryLabel.TextAlign = ContentAlignment.MiddleRight;
 
         tagsContent.Controls.Add(_tagsListBox);
         tagsContent.Controls.Add(_emptyTagsLabel);
@@ -411,8 +494,7 @@ public sealed class AddStudyItemForm : Form
         {
             Dock = DockStyle.Fill,
             Text = text,
-            TextAlign = ContentAlignment.MiddleRight,
-            RightToLeft = RightToLeft.Yes
+            TextAlign = ContentAlignment.MiddleRight
         };
     }
 
@@ -422,8 +504,8 @@ public sealed class AddStudyItemForm : Form
         textBox.Multiline = true;
         textBox.ScrollBars = ScrollBars.Vertical;
         textBox.BorderStyle = BorderStyle.FixedSingle;
-        textBox.RightToLeft = RightToLeft.Yes;
         textBox.Text = value ?? string.Empty;
+        textBox.RightToLeft = RightToLeft.Yes;
     }
 
     private sealed record SubjectChoice(int Id, string DisplayName)

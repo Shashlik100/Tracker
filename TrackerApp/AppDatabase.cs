@@ -5,6 +5,34 @@ namespace TrackerApp;
 
 public sealed partial class AppDatabase : IDisposable
 {
+    private const string StudyItemSelectColumns =
+        """
+        Id,
+        SubjectId,
+        Topic,
+        Question,
+        Answer,
+        SourceText,
+        PshatText,
+        KushyaText,
+        TerutzText,
+        ChidushText,
+        PersonalSummary,
+        ReviewNotes,
+        CreatedAt,
+        ModifiedAt,
+        DueDate,
+        Level,
+        TotalReviews,
+        RepetitionCount,
+        Lapses,
+        EaseFactor,
+        IntervalDays,
+        LastRating,
+        LastReviewedAt,
+        ManualDifficulty
+        """;
+
     private readonly string _connectionString;
     private readonly string _databasePath;
     private readonly SefariaTanakhService _sefariaApiService;
@@ -30,6 +58,30 @@ public sealed partial class AppDatabase : IDisposable
     }
 
     public string DatabasePath => _databasePath;
+
+    public static string GetDefaultApplicationDataFolder()
+    {
+        return ResolveDataFolder();
+    }
+
+    public static string GetDefaultLogsFolder()
+    {
+        var folder = Path.Combine(GetDefaultApplicationDataFolder(), "logs");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
+
+    public string GetApplicationDataFolder()
+    {
+        return Path.GetDirectoryName(_databasePath) ?? AppContext.BaseDirectory;
+    }
+
+    public string GetLogsFolder()
+    {
+        var folder = Path.Combine(GetApplicationDataFolder(), "logs");
+        Directory.CreateDirectory(folder);
+        return folder;
+    }
 
     public void Initialize()
     {
@@ -238,13 +290,7 @@ public sealed partial class AppDatabase : IDisposable
     {
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
-        command.CommandText =
-            """
-            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
-                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
-            FROM StudyItems
-            WHERE Id = $itemId;
-            """;
+        command.CommandText = $"SELECT {StudyItemSelectColumns} FROM StudyItems WHERE Id = $itemId;";
         command.Parameters.AddWithValue("$itemId", itemId);
 
         using var reader = command.ExecuteReader();
@@ -264,26 +310,25 @@ public sealed partial class AppDatabase : IDisposable
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
         command.CommandText =
-            """
-            WITH RECURSIVE SubjectTree AS (
-                SELECT Id FROM Subjects WHERE Id = $subjectId
-                UNION ALL
-                SELECT Subjects.Id
-                FROM Subjects
-                INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
-            )
-            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
-                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
-            FROM StudyItems
-            WHERE $subjectId IS NULL OR SubjectId IN (SELECT Id FROM SubjectTree)
-            ORDER BY date(DueDate) ASC, Topic ASC;
-            """;
+            $"""
+             WITH RECURSIVE SubjectTree AS (
+                 SELECT Id FROM Subjects WHERE Id = $subjectId
+                 UNION ALL
+                 SELECT Subjects.Id
+                 FROM Subjects
+                 INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
+             )
+             SELECT {StudyItemSelectColumns}
+             FROM StudyItems
+             WHERE $subjectId IS NULL OR SubjectId IN (SELECT Id FROM SubjectTree)
+             ORDER BY date(DueDate) ASC, Topic ASC;
+             """;
         command.Parameters.AddWithValue("$subjectId", subjectId.HasValue ? subjectId.Value : DBNull.Value);
 
         return LoadStudyItems(connection, command);
     }
 
-    public int AddStudyItem(int subjectId, string topic, string question, string answer, StudyDifficulty? manualDifficulty = null)
+    public int AddStudyItem(StudyItemDraftModel draft)
     {
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
@@ -291,29 +336,34 @@ public sealed partial class AppDatabase : IDisposable
         command.CommandText =
             """
             INSERT INTO StudyItems (
-                SubjectId, Topic, Question, Answer, SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
+                SubjectId, Topic, Question, Answer, SourceText, PshatText, KushyaText, TerutzText, ChidushText, PersonalSummary, ReviewNotes,
+                SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
                 TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
             )
             VALUES (
-                $subjectId, $topic, $question, $answer, $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
+                $subjectId, $topic, $question, $answer, $sourceText, $pshatText, $kushyaText, $terutzText, $chidushText, $personalSummary, $reviewNotes,
+                $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
                 0, 0, 0, 2.5, 0, '', NULL, $manualDifficulty
             );
             """;
-        command.Parameters.AddWithValue("$subjectId", subjectId);
-        command.Parameters.AddWithValue("$topic", topic.Trim());
-        command.Parameters.AddWithValue("$question", question.Trim());
-        command.Parameters.AddWithValue("$answer", answer.Trim());
-        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
-        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
-        command.Parameters.AddWithValue("$createdAt", FormatDate(now));
-        command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
-        command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
-        command.Parameters.AddWithValue("$manualDifficulty", manualDifficulty.HasValue ? manualDifficulty.Value.ToString() : string.Empty);
+        BindStudyItemDraftParameters(command, draft, DateTime.Now);
         command.ExecuteNonQuery();
         return GetLastInsertRowId(connection, null);
     }
 
-    public void UpdateStudyItem(int itemId, int subjectId, string topic, string question, string answer, StudyDifficulty? manualDifficulty = null)
+    public int AddStudyItem(int subjectId, string topic, string question, string answer, StudyDifficulty? manualDifficulty = null)
+    {
+        return AddStudyItem(new StudyItemDraftModel
+        {
+            SubjectId = subjectId,
+            Topic = topic,
+            SourceText = question,
+            PersonalSummary = answer,
+            ManualDifficulty = manualDifficulty
+        });
+    }
+
+    public void UpdateStudyItem(int itemId, StudyItemDraftModel draft)
     {
         using var connection = OpenConnection();
         using var command = connection.CreateCommand();
@@ -324,6 +374,13 @@ public sealed partial class AppDatabase : IDisposable
                 Topic = $topic,
                 Question = $question,
                 Answer = $answer,
+                SourceText = $sourceText,
+                PshatText = $pshatText,
+                KushyaText = $kushyaText,
+                TerutzText = $terutzText,
+                ChidushText = $chidushText,
+                PersonalSummary = $personalSummary,
+                ReviewNotes = $reviewNotes,
                 SubjectPathCache = $subjectPathCache,
                 RootCategoryCache = $rootCategoryCache,
                 ManualDifficulty = $manualDifficulty,
@@ -331,15 +388,20 @@ public sealed partial class AppDatabase : IDisposable
             WHERE Id = $itemId;
             """;
         command.Parameters.AddWithValue("$itemId", itemId);
-        command.Parameters.AddWithValue("$subjectId", subjectId);
-        command.Parameters.AddWithValue("$topic", topic.Trim());
-        command.Parameters.AddWithValue("$question", question.Trim());
-        command.Parameters.AddWithValue("$answer", answer.Trim());
-        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
-        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
-        command.Parameters.AddWithValue("$manualDifficulty", manualDifficulty.HasValue ? manualDifficulty.Value.ToString() : string.Empty);
-        command.Parameters.AddWithValue("$modifiedAt", FormatDate(DateTime.Now));
+        BindStudyItemDraftParameters(command, draft, DateTime.Now);
         command.ExecuteNonQuery();
+    }
+
+    public void UpdateStudyItem(int itemId, int subjectId, string topic, string question, string answer, StudyDifficulty? manualDifficulty = null)
+    {
+        UpdateStudyItem(itemId, new StudyItemDraftModel
+        {
+            SubjectId = subjectId,
+            Topic = topic,
+            SourceText = question,
+            PersonalSummary = answer,
+            ManualDifficulty = manualDifficulty
+        });
     }
 
     public void DeleteStudyItem(int itemId)
@@ -429,8 +491,13 @@ public sealed partial class AppDatabase : IDisposable
             SubjectPath = currentItem.SubjectPath,
             RootCategory = currentItem.RootCategory,
             Topic = currentItem.Topic,
-            Question = currentItem.Question,
-            Answer = currentItem.Answer,
+            SourceText = currentItem.SourceText,
+            PshatText = currentItem.PshatText,
+            KushyaText = currentItem.KushyaText,
+            TerutzText = currentItem.TerutzText,
+            ChidushText = currentItem.ChidushText,
+            PersonalSummary = currentItem.PersonalSummary,
+            ReviewNotes = currentItem.ReviewNotes,
             CreatedAt = currentItem.CreatedAt,
             ModifiedAt = reviewedAt,
             DueDate = result.NextDueDate,
@@ -443,6 +510,27 @@ public sealed partial class AppDatabase : IDisposable
             LastRating = rating.ToString(),
             LastReviewedAt = reviewedAt
         };
+    }
+
+    private void BindStudyItemDraftParameters(SqliteCommand command, StudyItemDraftModel draft, DateTime now)
+    {
+        command.Parameters.AddWithValue("$subjectId", draft.SubjectId);
+        command.Parameters.AddWithValue("$topic", draft.Topic.Trim());
+        command.Parameters.AddWithValue("$question", draft.SourceText.Trim());
+        command.Parameters.AddWithValue("$answer", draft.PersonalSummary.Trim());
+        command.Parameters.AddWithValue("$sourceText", draft.SourceText.Trim());
+        command.Parameters.AddWithValue("$pshatText", draft.PshatText.Trim());
+        command.Parameters.AddWithValue("$kushyaText", draft.KushyaText.Trim());
+        command.Parameters.AddWithValue("$terutzText", draft.TerutzText.Trim());
+        command.Parameters.AddWithValue("$chidushText", draft.ChidushText.Trim());
+        command.Parameters.AddWithValue("$personalSummary", draft.PersonalSummary.Trim());
+        command.Parameters.AddWithValue("$reviewNotes", draft.ReviewNotes.Trim());
+        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(draft.SubjectId));
+        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(draft.SubjectId));
+        command.Parameters.AddWithValue("$createdAt", FormatDate(now));
+        command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
+        command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
+        command.Parameters.AddWithValue("$manualDifficulty", draft.ManualDifficulty.HasValue ? draft.ManualDifficulty.Value.ToString() : string.Empty);
     }
 
     public void Dispose()

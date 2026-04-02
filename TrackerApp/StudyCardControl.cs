@@ -16,8 +16,8 @@ public sealed class StudyCardControl : UserControl
         BackColor = ClassicPalette.CardBackground;
         Margin = new Padding(8, 6, 8, 6);
         Padding = new Padding(10);
-        Height = 620;
-        MinimumSize = new Size(660, 620);
+        Height = 760;
+        MinimumSize = new Size(700, 760);
         RightToLeft = RightToLeft.Yes;
         BuildLayout();
         UiLayoutHelper.ApplyRecursive(this);
@@ -52,43 +52,17 @@ public sealed class StudyCardControl : UserControl
             Padding = Padding.Empty
         };
 
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 36F));
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
         rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 34F));
         rootLayout.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
-        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 84F));
+        rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 96F));
         rootLayout.RowStyles.Add(new RowStyle(SizeType.Absolute, 136F));
-
-        var contentSplit = new SplitContainer
-        {
-            Dock = DockStyle.Fill,
-            Orientation = Orientation.Horizontal,
-            FixedPanel = FixedPanel.None,
-            IsSplitterFixed = false,
-            BorderStyle = BorderStyle.None,
-            Panel1MinSize = 80,
-            Panel2MinSize = 80,
-            RightToLeft = RightToLeft.Yes
-        };
-        contentSplit.Resize += (_, _) =>
-        {
-            var availableHeight = contentSplit.Height - contentSplit.SplitterWidth;
-            if (availableHeight <= contentSplit.Panel1MinSize + contentSplit.Panel2MinSize)
-            {
-                return;
-            }
-
-            var target = Math.Max(contentSplit.Panel1MinSize, availableHeight / 2);
-            var maxTarget = availableHeight - contentSplit.Panel2MinSize;
-            contentSplit.SplitterDistance = Math.Min(target, maxTarget);
-        };
-        contentSplit.Panel1.Controls.Add(CreateSection("שאלה", _item.Question, 84));
-        contentSplit.Panel2.Controls.Add(CreateSection("תשובה", _item.Answer, 84));
 
         rootLayout.Controls.Add(CreateHeaderPanel(), 0, 0);
         rootLayout.Controls.Add(CreateTopicLabel(), 0, 1);
         rootLayout.Controls.Add(CreateTagsPanel(), 0, 2);
-        rootLayout.Controls.Add(contentSplit, 0, 3);
+        rootLayout.Controls.Add(CreateContentPanel(), 0, 3);
         rootLayout.Controls.Add(CreateMetaLayout(), 0, 4);
         rootLayout.Controls.Add(CreateActionsPanel(), 0, 5);
 
@@ -110,10 +84,10 @@ public sealed class StudyCardControl : UserControl
         var dateLabel = new Label
         {
             Dock = DockStyle.Left,
-            Width = 120,
-            Text = _item.DueDate.ToString("dd/MM/yyyy"),
+            Width = 156,
+            Text = $"חזרה הבאה: {_item.DueDate:dd/MM/yyyy}",
             ForeColor = Color.White,
-            TextAlign = ContentAlignment.MiddleLeft,
+            TextAlign = ContentAlignment.MiddleRight,
             RightToLeft = RightToLeft.Yes
         };
 
@@ -156,7 +130,7 @@ public sealed class StudyCardControl : UserControl
         var caption = new Label
         {
             Dock = DockStyle.Right,
-            Width = 64,
+            Width = 82,
             Text = "תגיות:",
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font(Font, FontStyle.Bold),
@@ -180,6 +154,59 @@ public sealed class StudyCardControl : UserControl
         return panel;
     }
 
+    private Control CreateContentPanel()
+    {
+        var sections = _item.GetDisplaySections();
+        if (sections.Count == 0)
+        {
+            return CreateEmptyContentPanel();
+        }
+
+        var scrollHost = new Panel
+        {
+            Dock = DockStyle.Fill,
+            AutoScroll = true,
+            BackColor = ClassicPalette.CardBackground,
+            RightToLeft = RightToLeft.Yes
+        };
+
+        var stack = new TableLayoutPanel
+        {
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 1,
+            RowCount = 0,
+            RightToLeft = RightToLeft.Yes,
+            Margin = Padding.Empty,
+            Padding = Padding.Empty
+        };
+
+        for (var index = 0; index < sections.Count; index++)
+        {
+            var (title, value) = sections[index];
+            stack.RowCount++;
+            stack.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            stack.Controls.Add(CreateSection(title, value), 0, index);
+        }
+
+        scrollHost.Controls.Add(stack);
+        return scrollHost;
+    }
+
+    private Control CreateEmptyContentPanel()
+    {
+        return new Label
+        {
+            Dock = DockStyle.Fill,
+            BorderStyle = BorderStyle.FixedSingle,
+            BackColor = Color.White,
+            Text = "אין עדיין תוכן לימודי להצגה ביחידה זו.",
+            TextAlign = ContentAlignment.MiddleCenter,
+            RightToLeft = RightToLeft.Yes
+        };
+    }
+
     private Control CreateMetaLayout()
     {
         var metaLayout = new TableLayoutPanel
@@ -194,14 +221,14 @@ public sealed class StudyCardControl : UserControl
         metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
         metaLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 25F));
 
-        metaLayout.Controls.Add(CreateMetaLabel($"תאריך יצירה: {_item.CreatedAt:dd/MM/yyyy}"), 0, 0);
-        metaLayout.Controls.Add(CreateMetaLabel($"חזרה: {(_item.LastRating.Length == 0 ? "-" : TranslateRating(_item.LastRating))}"), 1, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"נוצרה: {_item.CreatedAt:dd/MM/yyyy}"), 0, 0);
+        metaLayout.Controls.Add(CreateMetaLabel($"דירוג אחרון: {(_item.LastRating.Length == 0 ? "-" : TranslateRating(_item.LastRating))}"), 1, 0);
         metaLayout.Controls.Add(CreateMetaLabel($"מרווח: {_item.IntervalDays:0.#} ימים"), 2, 0);
         metaLayout.Controls.Add(CreateMetaLabel($"EF: {_item.EaseFactor:0.00}"), 3, 0);
         metaLayout.Controls.Add(CreateMetaLabel($"שלב: {_item.Level}"), 0, 1);
         metaLayout.Controls.Add(CreateMetaLabel($"חזרות: {_item.TotalReviews}"), 1, 1);
         metaLayout.Controls.Add(CreateMetaLabel($"קושי: {TranslateDifficulty(_item.Difficulty)}"), 2, 1);
-        metaLayout.Controls.Add(CreateMetaLabel(_item.IsMastered ? "נלמד היטב" : "בתהליך"), 3, 1);
+        metaLayout.Controls.Add(CreateMetaLabel(_item.IsMastered ? "מחזור יציב" : "עדיין בתהליך"), 3, 1);
 
         return metaLayout;
     }
@@ -233,14 +260,14 @@ public sealed class StudyCardControl : UserControl
         manageLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
         manageLayout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 33.333F));
 
-        var deleteButton = new Button { Text = "מחק", Width = 84, Height = 38 };
+        var deleteButton = new Button { Text = "מחק יחידה", Width = 106, Height = 38 };
         deleteButton.Click += (_, _) => DeleteClicked?.Invoke(this, _item.Id);
-        var editButton = new Button { Text = "ערוך", Width = 84, Height = 38 };
+        var editButton = new Button { Text = "ערוך יחידה", Width = 114, Height = 38 };
         editButton.Click += (_, _) => EditClicked?.Invoke(this, _item.Id);
         var tagsButton = new Button { Text = "תגיות", Width = 92, Height = 38 };
         tagsButton.Click += (_, _) => TagsClicked?.Invoke(this, _item.Id);
-        UiLayoutHelper.StyleActionButton(deleteButton, 84, 38);
-        UiLayoutHelper.StyleActionButton(editButton, 84, 38);
+        UiLayoutHelper.StyleActionButton(deleteButton, 106, 38);
+        UiLayoutHelper.StyleActionButton(editButton, 114, 38);
         UiLayoutHelper.StyleActionButton(tagsButton, 92, 38);
 
         deleteButton.Dock = DockStyle.Fill;
@@ -268,7 +295,7 @@ public sealed class StudyCardControl : UserControl
         var easyButton = CreateRatingButton("טוב", ReviewRating.Easy, Color.FromArgb(206, 232, 234));
         var goodButton = CreateRatingButton("בסדר", ReviewRating.Good, Color.FromArgb(221, 235, 210));
         var hardButton = CreateRatingButton("חלש", ReviewRating.Hard, Color.FromArgb(240, 228, 204));
-        var againButton = CreateRatingButton("גרוע", ReviewRating.Again, Color.FromArgb(241, 216, 208));
+        var againButton = CreateRatingButton("צריך חיזוק", ReviewRating.Again, Color.FromArgb(241, 216, 208));
         perfectButton.Dock = DockStyle.Fill;
         easyButton.Dock = DockStyle.Fill;
         goodButton.Dock = DockStyle.Fill;
@@ -290,20 +317,22 @@ public sealed class StudyCardControl : UserControl
         var button = new Button
         {
             Text = text,
-            Width = 92,
+            Width = 104,
             Height = 34,
             BackColor = backColor
         };
-        UiLayoutHelper.StyleActionButton(button, 92, 40);
+        UiLayoutHelper.StyleActionButton(button, 104, 40);
         button.Click += (_, _) => RatingClicked?.Invoke(this, rating);
         return button;
     }
 
-    private static Control CreateSection(string caption, string text, int textHeight)
+    private static Control CreateSection(string caption, string text)
     {
         var panel = new Panel
         {
-            Dock = DockStyle.Fill,
+            Dock = DockStyle.Top,
+            Height = 156,
+            Margin = new Padding(0, 0, 0, 8),
             RightToLeft = RightToLeft.Yes
         };
 
@@ -343,16 +372,16 @@ public sealed class StudyCardControl : UserControl
         };
     }
 
-    private static string TranslateRating(string value)
+    private static string TranslateRating(string rating)
     {
-        return value switch
+        return rating switch
         {
-            "Again" => "גרוע",
-            "Hard" => "חלש",
-            "Good" => "בסדר",
-            "Easy" => "טוב",
-            "Perfect" => "מצוין",
-            _ => value
+            nameof(ReviewRating.Again) => "צריך חיזוק",
+            nameof(ReviewRating.Hard) => "חלש",
+            nameof(ReviewRating.Good) => "בסדר",
+            nameof(ReviewRating.Easy) => "טוב",
+            nameof(ReviewRating.Perfect) => "מצוין",
+            _ => rating
         };
     }
 
@@ -360,10 +389,10 @@ public sealed class StudyCardControl : UserControl
     {
         return difficulty switch
         {
-            StudyDifficulty.Easy => "קלה",
-            StudyDifficulty.Medium => "בינונית",
             StudyDifficulty.Hard => "קשה",
-            _ => "-"
+            StudyDifficulty.Medium => "בינונית",
+            StudyDifficulty.Easy => "קלה",
+            _ => "ללא"
         };
     }
 }

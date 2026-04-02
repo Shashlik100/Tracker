@@ -18,16 +18,16 @@ public sealed class CsvImportForm : Form
         _database = database;
         _fallbackSubjectId = fallbackSubjectId;
 
-        Text = "ייבוא CSV";
+        Text = "ייבוא יחידות לימוד מ-CSV";
         StartPosition = FormStartPosition.CenterParent;
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = false;
         ShowInTaskbar = false;
-        ClientSize = new Size(1080, 720);
+        ClientSize = new Size(1180, 760);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
 
         BuildLayout(fallbackSubjectPath);
@@ -43,32 +43,36 @@ public sealed class CsvImportForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 4,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
         };
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 62F));
-        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 208F));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 240F));
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 104F));
 
         var filePanel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 4
+            ColumnCount = 4,
+            RightToLeft = RightToLeft.Yes
         };
         filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 80F));
         filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
-        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
-        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
+        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 140F));
+        filePanel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 160F));
 
         _filePathTextBox.Dock = DockStyle.Fill;
-        _filePathTextBox.RightToLeft = RightToLeft.No;
         _hasHeaderCheckBox.Text = "לקובץ יש שורת כותרת";
         _hasHeaderCheckBox.Checked = true;
         _hasHeaderCheckBox.Dock = DockStyle.Fill;
 
         var browseButton = new Button { Text = "בחירת קובץ", Dock = DockStyle.Fill };
+        UiLayoutHelper.StyleActionButton(browseButton, 120, 38);
         browseButton.Click += (_, _) => BrowseFile();
+
         var previewButton = new Button { Text = "טעינת תצוגה מקדימה", Dock = DockStyle.Fill };
+        UiLayoutHelper.StyleActionButton(previewButton, 156, 38);
         previewButton.Click += (_, _) => LoadPreview();
 
         filePanel.Controls.Add(new Label { Dock = DockStyle.Fill, Text = "קובץ", TextAlign = ContentAlignment.MiddleRight }, 0, 0);
@@ -78,8 +82,11 @@ public sealed class CsvImportForm : Form
 
         var mappingLayout = new TableLayoutPanel
         {
-            Dock = DockStyle.Fill,
-            ColumnCount = 4
+            Dock = DockStyle.Top,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
+            ColumnCount = 4,
+            RightToLeft = RightToLeft.Yes
         };
         for (var index = 0; index < 4; index++)
         {
@@ -87,21 +94,26 @@ public sealed class CsvImportForm : Form
         }
 
         AddMappingRow(mappingLayout, 0, CsvFieldType.Topic, "נושא");
-        AddMappingRow(mappingLayout, 1, CsvFieldType.Question, "שאלה");
-        AddMappingRow(mappingLayout, 2, CsvFieldType.Answer, "תשובה");
-        AddMappingRow(mappingLayout, 3, CsvFieldType.Book, "ספר");
-        AddMappingRow(mappingLayout, 4, CsvFieldType.Chapter, "פרק");
-        AddMappingRow(mappingLayout, 5, CsvFieldType.Verse, "פסוק");
-        AddMappingRow(mappingLayout, 6, CsvFieldType.Difficulty, "קושי");
-        AddMappingRow(mappingLayout, 7, CsvFieldType.Tags, "תגיות");
+        AddMappingRow(mappingLayout, 1, CsvFieldType.SourceText, "מקור");
+        AddMappingRow(mappingLayout, 2, CsvFieldType.PshatText, "פשט");
+        AddMappingRow(mappingLayout, 3, CsvFieldType.KushyaText, "קושיה");
+        AddMappingRow(mappingLayout, 4, CsvFieldType.TerutzText, "תירוץ");
+        AddMappingRow(mappingLayout, 5, CsvFieldType.ChidushText, "חידוש");
+        AddMappingRow(mappingLayout, 6, CsvFieldType.PersonalSummary, "סיכום אישי");
+        AddMappingRow(mappingLayout, 7, CsvFieldType.ReviewNotes, "הערות חזרה");
+        AddMappingRow(mappingLayout, 8, CsvFieldType.Book, "ספר");
+        AddMappingRow(mappingLayout, 9, CsvFieldType.Chapter, "פרק");
+        AddMappingRow(mappingLayout, 10, CsvFieldType.Verse, "פסוק");
+        AddMappingRow(mappingLayout, 11, CsvFieldType.Difficulty, "קושי");
+        AddMappingRow(mappingLayout, 12, CsvFieldType.Tags, "תגיות");
 
         var mappingHost = new Panel { Dock = DockStyle.Fill, AutoScroll = true };
         _fallbackLabel.Dock = DockStyle.Bottom;
-        _fallbackLabel.Height = 22;
+        _fallbackLabel.Height = 24;
         _fallbackLabel.TextAlign = ContentAlignment.MiddleRight;
         _fallbackLabel.Text = _fallbackSubjectId.HasValue
             ? $"מיקום ברירת מחדל: {fallbackSubjectPath}"
-            : "אין כרגע צומת נבחר. יש למפות ספר/פרק/פסוק או לבחור צומת לפני ייבוא.";
+            : "אין כרגע צומת נבחר. יש למפות ספר/פרק/פסוק או לבחור צומת לפני הייבוא.";
         mappingHost.Controls.Add(mappingLayout);
         mappingHost.Controls.Add(_fallbackLabel);
 
@@ -133,8 +145,6 @@ public sealed class CsvImportForm : Form
         UiLayoutHelper.StyleActionButton(cancelButton, 100, 38);
         importButton.Dock = DockStyle.Fill;
         cancelButton.Dock = DockStyle.Fill;
-        _summaryLabel.Dock = DockStyle.Fill;
-        _summaryLabel.TextAlign = ContentAlignment.MiddleRight;
         footer.Controls.Add(importButton, 0, 0);
         footer.Controls.Add(cancelButton, 1, 0);
         footer.Controls.Add(_summaryLabel, 2, 0);
@@ -159,13 +169,14 @@ public sealed class CsvImportForm : Form
             layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 38F));
         }
 
-        var column = (index % 4);
+        var column = index % 4;
         var panel = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            ColumnCount = 2
+            ColumnCount = 2,
+            RightToLeft = RightToLeft.Yes
         };
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 68F));
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 92F));
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
 
         var combo = new ComboBox
@@ -230,7 +241,7 @@ public sealed class CsvImportForm : Form
             throw new InvalidOperationException("קובץ ה-CSV ריק.");
         }
 
-        _columnNames = (_hasHeaderCheckBox.Checked ? rows[0] : rows[0].Select((_, index) => $"עמודה {index + 1}").ToArray());
+        _columnNames = _hasHeaderCheckBox.Checked ? rows[0] : rows[0].Select((_, index) => $"עמודה {index + 1}").ToArray();
         foreach (var pair in _mappingBoxes)
         {
             var combo = pair.Value;
@@ -250,8 +261,13 @@ public sealed class CsvImportForm : Form
     private void AutoMapColumns()
     {
         MapByKeyword(CsvFieldType.Topic, ["נושא", "topic"]);
-        MapByKeyword(CsvFieldType.Question, ["שאלה", "question"]);
-        MapByKeyword(CsvFieldType.Answer, ["תשובה", "answer"]);
+        MapByKeyword(CsvFieldType.SourceText, ["מקור", "source", "question", "שאלה"]);
+        MapByKeyword(CsvFieldType.PshatText, ["פשט", "pshat"]);
+        MapByKeyword(CsvFieldType.KushyaText, ["קושיה", "kushya"]);
+        MapByKeyword(CsvFieldType.TerutzText, ["תירוץ", "terutz"]);
+        MapByKeyword(CsvFieldType.ChidushText, ["חידוש", "chidush"]);
+        MapByKeyword(CsvFieldType.PersonalSummary, ["סיכום", "summary", "answer", "תשובה"]);
+        MapByKeyword(CsvFieldType.ReviewNotes, ["הערות", "notes", "review"]);
         MapByKeyword(CsvFieldType.Book, ["ספר", "book"]);
         MapByKeyword(CsvFieldType.Chapter, ["פרק", "chapter"]);
         MapByKeyword(CsvFieldType.Verse, ["פסוק", "verse"]);
@@ -297,6 +313,8 @@ public sealed class CsvImportForm : Form
             שורה = row.RowNumber,
             תקין = row.IsValid ? "כן" : "לא",
             נושא = row.Topic,
+            מקור = row.SourceText,
+            סיכום = row.PersonalSummary,
             מיקום = row.SubjectPath,
             קושי = row.Difficulty,
             תגיות = row.Tags,
@@ -321,7 +339,7 @@ public sealed class CsvImportForm : Form
         var imported = _database.ImportCsvWithMapping(_filePathTextBox.Text, BuildMapping());
         MessageBox.Show(
             this,
-            $"ייבוא הושלם. נוספו {imported} כרטיסים.",
+            $"הייבוא הושלם. נוספו {imported} יחידות לימוד.",
             "ייבוא CSV",
             MessageBoxButtons.OK,
             MessageBoxIcon.Information,

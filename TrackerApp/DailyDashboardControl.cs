@@ -168,7 +168,7 @@ public sealed class DailyDashboardControl : UserControl
             AutoScroll = false,
             Padding = new Padding(6, 6, 6, 12),
             Margin = Padding.Empty,
-            RightToLeft = RightToLeft.Yes
+            RightToLeft = RightToLeft.No
         };
         summaryPanel.Controls.Add(CreateSummaryBox("להיום", _dueTodayLabel));
         summaryPanel.Controls.Add(CreateSummaryBox("באיחור", _overdueLabel));
@@ -190,7 +190,7 @@ public sealed class DailyDashboardControl : UserControl
             WrapContents = true,
             AutoScroll = true,
             Padding = new Padding(10, 14, 10, 16),
-            RightToLeft = RightToLeft.Yes,
+            RightToLeft = RightToLeft.No,
             Margin = Padding.Empty
         };
         queueLayout.Controls.Add(CreateActionButton("התחל חזרה יומית", (_, _) => DailyReviewRequested?.Invoke(this, EventArgs.Empty)));

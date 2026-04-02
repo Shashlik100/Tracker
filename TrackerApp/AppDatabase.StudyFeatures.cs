@@ -190,8 +190,8 @@ public sealed partial class AppDatabase
                 FROM Subjects
                 INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
             )
-            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
-                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
+            SELECT Id, SubjectId, Topic, Question, Answer, SourceText, PshatText, KushyaText, TerutzText, ChidushText, PersonalSummary, ReviewNotes,
+                   CreatedAt, ModifiedAt, DueDate, Level, TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
             FROM StudyItems i
             WHERE 1 = 1 
             """);
@@ -236,12 +236,19 @@ public sealed partial class AppDatabase
             var parameterName = $"$token{index}";
             sql.AppendLine(
                 $"""
-                 AND (
-                        i.SubjectPathCache LIKE {parameterName}
-                     OR i.Topic LIKE {parameterName}
-                     OR i.Question LIKE {parameterName}
-                     OR i.Answer LIKE {parameterName}
-                     OR EXISTS (
+                     AND (
+                            i.SubjectPathCache LIKE {parameterName}
+                         OR i.Topic LIKE {parameterName}
+                         OR i.SourceText LIKE {parameterName}
+                         OR i.PshatText LIKE {parameterName}
+                         OR i.KushyaText LIKE {parameterName}
+                         OR i.TerutzText LIKE {parameterName}
+                         OR i.ChidushText LIKE {parameterName}
+                         OR i.PersonalSummary LIKE {parameterName}
+                         OR i.ReviewNotes LIKE {parameterName}
+                         OR i.Question LIKE {parameterName}
+                         OR i.Answer LIKE {parameterName}
+                         OR EXISTS (
                             SELECT 1
                             FROM StudyItemTags sit
                             INNER JOIN Tags t ON t.Id = sit.TagId
@@ -288,8 +295,8 @@ public sealed partial class AppDatabase
                 FROM Subjects
                 INNER JOIN SubjectTree ON Subjects.ParentId = SubjectTree.Id
             )
-            SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
-                   TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
+            SELECT Id, SubjectId, Topic, Question, Answer, SourceText, PshatText, KushyaText, TerutzText, ChidushText, PersonalSummary, ReviewNotes,
+                   CreatedAt, ModifiedAt, DueDate, Level, TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
             FROM StudyItems i
             WHERE 1 = 1 
             """);

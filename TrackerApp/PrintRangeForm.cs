@@ -16,7 +16,7 @@ public sealed class PrintRangeForm : Form
         ClientSize = new Size(480, 198);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
 
         BuildLayout();
@@ -34,7 +34,8 @@ public sealed class PrintRangeForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 3,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 120F));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -120,8 +121,7 @@ public sealed class PrintRangeForm : Form
         {
             Dock = DockStyle.Fill,
             Text = text,
-            TextAlign = ContentAlignment.MiddleRight,
-            RightToLeft = RightToLeft.Yes
+            TextAlign = ContentAlignment.MiddleRight
         };
     }
 }

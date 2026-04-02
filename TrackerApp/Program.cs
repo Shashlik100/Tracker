@@ -21,8 +21,9 @@ internal static class Program
 
         try
         {
+            var argsLogPath = Path.Combine(AppDatabase.GetDefaultLogsFolder(), "program-args.log");
             File.AppendAllText(
-                "C:\\CodexProjects\\Tracker\\artifacts\\program-args.log",
+                argsLogPath,
                 $"[{DateTime.Now:HH:mm:ss}] args={string.Join(" | ", args)}{Environment.NewLine}");
             AppendProgramLog("Main entered");
 
@@ -151,7 +152,7 @@ internal static class Program
 
     private static void AppendProgramLog(string message)
     {
-        const string logPath = "C:\\CodexProjects\\Tracker\\artifacts\\program-trace.log";
+        var logPath = Path.Combine(AppDatabase.GetDefaultLogsFolder(), "program-trace.log");
         File.AppendAllText(logPath, $"[{DateTime.Now:HH:mm:ss}] {message}{Environment.NewLine}");
     }
 

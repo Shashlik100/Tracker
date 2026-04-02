@@ -11,6 +11,7 @@ internal static class UiLayoutHelper
         form.AutoScaleMode = AutoScaleMode.Dpi;
         form.Font = BaseFont;
         form.RightToLeft = RightToLeft.Yes;
+        form.RightToLeftLayout = true;
         form.AutoScaleDimensions = new SizeF(96F, 96F);
     }
 
@@ -31,7 +32,6 @@ internal static class UiLayoutHelper
     public static void StyleActionButton(Button button, int minWidth = 112, int minHeight = 38)
     {
         button.UseCompatibleTextRendering = true;
-        button.RightToLeft = RightToLeft.Yes;
         button.TextAlign = ContentAlignment.MiddleRight;
         button.TextImageRelation = TextImageRelation.TextBeforeImage;
         button.Padding = new Padding(10, 6, 18, 6);
@@ -51,7 +51,6 @@ internal static class UiLayoutHelper
         label.UseCompatibleTextRendering = true;
         label.AutoSize = false;
         label.AutoEllipsis = false;
-        label.RightToLeft = RightToLeft.Yes;
         label.Font = SectionHeaderFont;
         label.BackColor = ClassicPalette.Teal;
         label.ForeColor = Color.White;
@@ -78,7 +77,6 @@ internal static class UiLayoutHelper
         grid.ColumnHeadersDefaultCellStyle.Alignment = DataGridViewContentAlignment.MiddleRight;
         grid.DefaultCellStyle.WrapMode = DataGridViewTriState.False;
         grid.ColumnHeadersDefaultCellStyle.WrapMode = DataGridViewTriState.True;
-        grid.RightToLeft = RightToLeft.Yes;
         grid.Font = BaseFont;
     }
 
@@ -93,7 +91,6 @@ internal static class UiLayoutHelper
 
     private static void ApplyControlMetrics(Control control)
     {
-        control.RightToLeft = RightToLeft.Yes;
         if (control.Font.Size < BaseFont.Size)
         {
             control.Font = BaseFont;
@@ -141,6 +138,7 @@ internal static class UiLayoutHelper
                 break;
             case TextBox textBox:
                 textBox.Font = BaseFont;
+                textBox.TextAlign = HorizontalAlignment.Right;
                 if (!textBox.Multiline && textBox.Height < 32)
                 {
                     textBox.Height = 32;
@@ -204,8 +202,11 @@ internal static class UiLayoutHelper
         return alignment switch
         {
             ContentAlignment.TopLeft => ContentAlignment.TopRight,
+            ContentAlignment.TopCenter => ContentAlignment.TopRight,
             ContentAlignment.MiddleLeft => ContentAlignment.MiddleRight,
+            ContentAlignment.MiddleCenter => ContentAlignment.MiddleRight,
             ContentAlignment.BottomLeft => ContentAlignment.BottomRight,
+            ContentAlignment.BottomCenter => ContentAlignment.BottomRight,
             _ => alignment
         };
     }
@@ -222,7 +223,6 @@ internal static class UiLayoutHelper
         strip.Height = Math.Max(strip.Height, 44);
         foreach (ToolStripItem item in strip.Items)
         {
-            item.RightToLeft = RightToLeft.Yes;
             if (item is ToolStripButton button)
             {
                 button.AutoSize = false;

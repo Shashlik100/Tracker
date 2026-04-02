@@ -6,7 +6,7 @@ namespace TrackerApp;
 public sealed partial class AppDatabase
 {
     private const string SchemaVersionKey = "SchemaVersion";
-    private const int CurrentSchemaVersion = 4;
+    private const int CurrentSchemaVersion = 5;
 
     private SchemaMigrationSummary _lastMigrationSummary = new();
 
@@ -102,6 +102,31 @@ public sealed partial class AppDatabase
             {
                 UpgradeSchema(connection, transaction);
                 SetMetadataValue(connection, transaction, "StudyUnitTracking", "enabled");
+            });
+
+        yield return new DatabaseMigration(
+            5,
+            "הרחבת יחידות הלימוד לשדות לימוד מובנים והסבת נתוני שאלה/תשובה קיימים",
+            (connection, transaction) =>
+            {
+                UpgradeSchema(connection, transaction);
+                ExecuteNonQuery(
+                    connection,
+                    transaction,
+                    """
+                    UPDATE StudyItems
+                    SET SourceText = CASE
+                            WHEN TRIM(SourceText) = '' THEN COALESCE(Question, '')
+                            ELSE SourceText
+                        END,
+                        PersonalSummary = CASE
+                            WHEN TRIM(PersonalSummary) = '' THEN COALESCE(Answer, '')
+                            ELSE PersonalSummary
+                        END
+                    WHERE TRIM(SourceText) = ''
+                       OR TRIM(PersonalSummary) = '';
+                    """);
+                SetMetadataValue(connection, transaction, "StudyUnitModel", "enabled");
             });
     }
 

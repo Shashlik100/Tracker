@@ -10,3 +10,17 @@ obj/
 .nuget/
 .localappdata/
 .appdata/
+.tmp/
+
+artifacts/
+TrackerApp/artifacts/
+TrackerQt/artifacts/
+
+**/AppData/
+**/backups/
+**/logs/
+
+*.log
+*.db-shm
+*.db-wal
+*.tmp

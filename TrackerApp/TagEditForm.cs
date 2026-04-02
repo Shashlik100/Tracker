@@ -15,7 +15,7 @@ public sealed class TagEditForm : Form
         ClientSize = new Size(460, 156);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
         BuildLayout(initialName);
         UiLayoutHelper.ApplyRecursive(this);
@@ -48,7 +48,8 @@ public sealed class TagEditForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 2,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90F));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
@@ -56,7 +57,6 @@ public sealed class TagEditForm : Form
         layout.RowStyles.Add(new RowStyle(SizeType.Absolute, 56F));
 
         _nameTextBox.Dock = DockStyle.Fill;
-        _nameTextBox.RightToLeft = RightToLeft.Yes;
         _nameTextBox.Text = initialName;
 
         layout.Controls.Add(new Label

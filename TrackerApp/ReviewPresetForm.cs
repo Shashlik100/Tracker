@@ -21,7 +21,7 @@ public sealed class ReviewPresetForm : Form
         ClientSize = new Size(640, 456);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
         BuildLayout(tags, selectedNodePath, existingPreset);
         UiLayoutHelper.ApplyRecursive(this);
@@ -233,8 +233,7 @@ public sealed class ReviewPresetForm : Form
         {
             Text = text,
             Dock = DockStyle.Fill,
-            TextAlign = ContentAlignment.MiddleRight,
-            RightToLeft = RightToLeft.Yes
+            TextAlign = ContentAlignment.MiddleRight
         };
     }
 

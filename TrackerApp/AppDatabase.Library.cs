@@ -30,6 +30,13 @@ public sealed partial class AppDatabase
                 Topic TEXT NOT NULL,
                 Question TEXT NOT NULL,
                 Answer TEXT NOT NULL,
+                SourceText TEXT NOT NULL DEFAULT '',
+                PshatText TEXT NOT NULL DEFAULT '',
+                KushyaText TEXT NOT NULL DEFAULT '',
+                TerutzText TEXT NOT NULL DEFAULT '',
+                ChidushText TEXT NOT NULL DEFAULT '',
+                PersonalSummary TEXT NOT NULL DEFAULT '',
+                ReviewNotes TEXT NOT NULL DEFAULT '',
                 SubjectPathCache TEXT NOT NULL DEFAULT '',
                 RootCategoryCache TEXT NOT NULL DEFAULT '',
                 CreatedAt TEXT NOT NULL,
@@ -141,6 +148,13 @@ public sealed partial class AppDatabase
         EnsureColumn(connection, transaction, "Subjects", "SourceKey", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, transaction, "StudyItems", "SubjectPathCache", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, transaction, "StudyItems", "RootCategoryCache", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "SourceText", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "PshatText", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "KushyaText", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "TerutzText", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "ChidushText", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "PersonalSummary", "TEXT NOT NULL DEFAULT ''");
+        EnsureColumn(connection, transaction, "StudyItems", "ReviewNotes", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, transaction, "StudyItems", "ModifiedAt", "TEXT NOT NULL DEFAULT ''");
         EnsureColumn(connection, transaction, "StudyItems", "RepetitionCount", "INTEGER NOT NULL DEFAULT 0");
         EnsureColumn(connection, transaction, "StudyItems", "Lapses", "INTEGER NOT NULL DEFAULT 0");
@@ -680,28 +694,57 @@ public sealed partial class AppDatabase
         string answer,
         DateTime now)
     {
+        InsertStudyItem(
+            connection,
+            transaction,
+            new StudyItemDraftModel
+            {
+                SubjectId = subjectId,
+                Topic = topic,
+                SourceText = question,
+                PersonalSummary = answer
+            },
+            now);
+    }
+
+    private void InsertStudyItem(
+        SqliteConnection connection,
+        SqliteTransaction transaction,
+        StudyItemDraftModel draft,
+        DateTime now)
+    {
         using var command = connection.CreateCommand();
         command.Transaction = transaction;
         command.CommandText =
             """
             INSERT INTO StudyItems (
-                SubjectId, Topic, Question, Answer, SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
+                SubjectId, Topic, Question, Answer, SourceText, PshatText, KushyaText, TerutzText, ChidushText, PersonalSummary, ReviewNotes,
+                SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
                 TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
             )
             VALUES (
-                $subjectId, $topic, $question, $answer, $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
-                0, 0, 0, 2.5, 0, '', NULL, ''
+                $subjectId, $topic, $question, $answer, $sourceText, $pshatText, $kushyaText, $terutzText, $chidushText, $personalSummary, $reviewNotes,
+                $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
+                0, 0, 0, 2.5, 0, '', NULL, $manualDifficulty
             );
             """;
-        command.Parameters.AddWithValue("$subjectId", subjectId);
-        command.Parameters.AddWithValue("$topic", topic.Trim());
-        command.Parameters.AddWithValue("$question", question.Trim());
-        command.Parameters.AddWithValue("$answer", answer.Trim());
-        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
-        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
+        command.Parameters.AddWithValue("$subjectId", draft.SubjectId);
+        command.Parameters.AddWithValue("$topic", draft.Topic.Trim());
+        command.Parameters.AddWithValue("$question", draft.SourceText.Trim());
+        command.Parameters.AddWithValue("$answer", draft.PersonalSummary.Trim());
+        command.Parameters.AddWithValue("$sourceText", draft.SourceText.Trim());
+        command.Parameters.AddWithValue("$pshatText", draft.PshatText.Trim());
+        command.Parameters.AddWithValue("$kushyaText", draft.KushyaText.Trim());
+        command.Parameters.AddWithValue("$terutzText", draft.TerutzText.Trim());
+        command.Parameters.AddWithValue("$chidushText", draft.ChidushText.Trim());
+        command.Parameters.AddWithValue("$personalSummary", draft.PersonalSummary.Trim());
+        command.Parameters.AddWithValue("$reviewNotes", draft.ReviewNotes.Trim());
+        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(draft.SubjectId));
+        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(draft.SubjectId));
         command.Parameters.AddWithValue("$createdAt", FormatDate(now));
         command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
         command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
+        command.Parameters.AddWithValue("$manualDifficulty", draft.ManualDifficulty?.ToString() ?? string.Empty);
         command.ExecuteNonQuery();
     }
 
