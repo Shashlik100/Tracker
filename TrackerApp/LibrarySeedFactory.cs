@@ -132,6 +132,47 @@ internal static class LibrarySeedFactory
         ];
     }
 
+    public static IReadOnlyList<(string[] Path, StudyItemDraftModel Draft)> GetSampleStudyUnits()
+    {
+        return
+        [
+            (
+                ["תלמוד", "בבלי"],
+                new StudyItemDraftModel
+                {
+                    Topic = "קריאת שמע של ערבית",
+                    SourceText = "הפתיחה של מסכת ברכות עוסקת בזמן קריאת שמע של ערבית.",
+                    KushyaText = "מדוע המסכת פותחת דווקא בזמן קריאת שמע של ערבית ולא בקריאת שמע של שחרית?",
+                    TerutzText = "הסוגיה קושרת את קבלת עול מלכות שמים לסדר היום ההלכתי כבר מתחילת הלילה.",
+                    PersonalSummary = "יחידת הלימוד מבליטה את נקודת הפתיחה של עבודת ה' במחזור היממה."
+                }
+            ),
+            (
+                ["תלמוד", "בבלי"],
+                new StudyItemDraftModel
+                {
+                    Topic = "במה מדליקין",
+                    SourceText = "הפרק עוסק בחומרי ההדלקה והפתילה הראויים לנר שבת.",
+                    PshatText = "הדיון מברר אילו שמנים ופתילות נותנים אור יציב וראוי לכבוד שבת.",
+                    KushyaText = "מהו החשש המרכזי שגורם לפסול חלק מאמצעי ההדלקה?",
+                    TerutzText = "החשש הוא הטיית הנר או כיבויו כאשר האור אינו יציב.",
+                    PersonalSummary = "יחידת הלימוד מחברת בין הלכות נר שבת לבין עקרון ההרחקה ממלאכה."
+                }
+            ),
+            (
+                ["תלמוד", "ירושלמי"],
+                new StudyItemDraftModel
+                {
+                    Topic = "סמיכות גאולה לתפילה",
+                    SourceText = "הירושלמי עוסק ברצף שבין הזכרת הגאולה לבין העמידה בתפילה.",
+                    PshatText = "סמיכות גאולה לתפילה מבטאת מעבר טבעי מהכרה בהשגחה לעמידה לפני ה'.",
+                    ChidushText = "הדגש הוא שהגאולה עצמה יוצרת את הקרבה לתפילה ולא רק קודמת לה.",
+                    PersonalSummary = "יחידת הלימוד מחברת בין אמונת הגאולה לבין חוויית התפילה."
+                }
+            )
+        ];
+    }
+
     public static bool HasLazyChildren(IReadOnlyList<string> pathSegments)
     {
         return pathSegments.Count switch

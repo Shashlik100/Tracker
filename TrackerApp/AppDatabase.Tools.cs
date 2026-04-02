@@ -163,16 +163,30 @@ public sealed partial class AppDatabase
                 sourceText = GetCell(row, header, hasHeader, 2, "Question");
             }
 
+            var pshatText = GetCell(row, header, hasHeader, 4, "PshatText");
+            var kushyaText = GetCell(row, header, hasHeader, 5, "KushyaText");
+            var terutzText = GetCell(row, header, hasHeader, 6, "TerutzText");
+            var chidushText = GetCell(row, header, hasHeader, 7, "ChidushText");
+            var reviewNotes = GetCell(row, header, hasHeader, 8, "ReviewNotes");
+
             var personalSummary = GetCell(row, header, hasHeader, 3, "PersonalSummary");
             if (string.IsNullOrWhiteSpace(personalSummary))
             {
                 personalSummary = GetCell(row, header, hasHeader, 3, "Answer");
             }
 
+            var hasStudyContent =
+                !string.IsNullOrWhiteSpace(sourceText) ||
+                !string.IsNullOrWhiteSpace(pshatText) ||
+                !string.IsNullOrWhiteSpace(kushyaText) ||
+                !string.IsNullOrWhiteSpace(terutzText) ||
+                !string.IsNullOrWhiteSpace(chidushText) ||
+                !string.IsNullOrWhiteSpace(personalSummary) ||
+                !string.IsNullOrWhiteSpace(reviewNotes);
+
             if (string.IsNullOrWhiteSpace(subjectPath) ||
                 string.IsNullOrWhiteSpace(topic) ||
-                string.IsNullOrWhiteSpace(sourceText) ||
-                string.IsNullOrWhiteSpace(personalSummary))
+                !hasStudyContent)
             {
                 continue;
             }
@@ -186,7 +200,12 @@ public sealed partial class AppDatabase
                     SubjectId = subjectId,
                     Topic = topic,
                     SourceText = sourceText,
-                    PersonalSummary = personalSummary
+                    PshatText = pshatText,
+                    KushyaText = kushyaText,
+                    TerutzText = terutzText,
+                    ChidushText = chidushText,
+                    PersonalSummary = personalSummary,
+                    ReviewNotes = reviewNotes
                 },
                 DateTime.Now);
             imported++;

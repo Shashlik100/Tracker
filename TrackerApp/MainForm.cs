@@ -2390,10 +2390,12 @@ public sealed class MainForm : Form
     {
         Exception? failure = null;
         var payload = new Dictionary<string, object?>();
+        var reportDirectory = Path.GetDirectoryName(request.ReportPath)!;
 
         try
         {
             await Task.Delay(1200);
+            Directory.CreateDirectory(reportDirectory);
             var tanakhNode = FindNodeByText(_subjectTreeView.Nodes, "תנ\"ך")
                 ?? throw new InvalidOperationException("צומת תנ\"ך לא נמצא בעץ.");
             await ExpandNodeAsync(tanakhNode, []);
@@ -2416,11 +2418,11 @@ public sealed class MainForm : Form
             RefreshTagBindings();
             var itemIds = EnsureCoreVerificationStudyItems((int)verseNode.Tag!, searchTagId, hardTagId);
 
-            var sampleCsvPath = Path.Combine(Path.GetDirectoryName(request.ReportPath)!, "sample-import.csv");
+            var sampleCsvPath = Path.Combine(reportDirectory, "sample-import.csv");
             CsvUtility.WriteRows(sampleCsvPath,
             [
-                ["נושא", "שאלה", "תשובה", "ספר", "פרק", "פסוק", "קושי", "תגיות"],
-                ["ייבוא בדיקה", "שאלה מקובץ CSV", "תשובת ייבוא", bookNode.Text, chapterNode.Text, verseNode.Text, "בינונית", "אאא-חיפוש;ייבוא"]
+                ["נושא", "מקור", "סיכום אישי", "ספר", "פרק", "פסוק", "קושי", "תגיות"],
+                ["ייבוא בדיקה", "מקור מקובץ CSV", "סיכום אישי מתוך ייבוא", bookNode.Text, chapterNode.Text, verseNode.Text, "בינונית", "אאא-חיפוש;ייבוא"]
             ]);
 
             using (var importForm = new CsvImportForm(_database, (int)verseNode.Tag!, TranslatePath(_database.GetSubjectPath((int)verseNode.Tag!))))
@@ -2436,7 +2438,7 @@ public sealed class MainForm : Form
                 await Task.Delay(300);
             }
 
-            var existingItem = _database.GetStudyItem(itemIds[0]) ?? throw new InvalidOperationException("כרטיס לא נמצא.");
+            var existingItem = _database.GetStudyItem(itemIds[0]) ?? throw new InvalidOperationException("יחידת הלימוד לא נמצאה.");
             using (var cardForm = new AddStudyItemForm(_database.GetAssignableSubjects(), _database.GetTags(), existingItem.SubjectId, existingItem))
             {
                 PrepareDialog(cardForm);
@@ -2526,7 +2528,7 @@ public sealed class MainForm : Form
                 createDialog.Show(this);
                 await Task.Delay(350);
                 var createdTag = createDialog.AutomationCreateTag(tagName)
-                    ?? throw new InvalidOperationException("לא ניתן היה ליצור תגית מתוך דיאלוג הכרטיס.");
+                    ?? throw new InvalidOperationException("לא ניתן היה ליצור תגית מתוך דיאלוג יחידת הלימוד.");
                 await Task.Delay(250);
 
                 payload["CreatedTagId"] = createdTag.Id;
@@ -2607,7 +2609,7 @@ public sealed class MainForm : Form
             var cards = _cardPanel.Controls.OfType<StudyCardControl>().ToList();
             if (cards.Count == 0)
             {
-                throw new InvalidOperationException("לא נמצאו כרטיסים לצילום.");
+                throw new InvalidOperationException("לא נמצאו יחידות לימוד לצילום.");
             }
 
             CaptureControlScreenshot(cards[0], request.CardScreenshotPath);
@@ -2731,7 +2733,13 @@ public sealed class MainForm : Form
             var items = _database.GetStudyItemsForSubject(selectedSubjectId);
             if (items.Count == 0)
             {
-                _database.AddStudyItem(selectedSubjectId, "כרטיס אימות שולחן ערוך", "מה נלמד בסעיף זה?", "זהו כרטיס בדיקה המשויך לרמת סעיף בשולחן ערוך לצורך אימות עץ הספרייה.");
+            _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = selectedSubjectId,
+                Topic = "יחידת אימות שולחן ערוך",
+                SourceText = "המקור עוסק בסעיף הנבחר בשולחן ערוך.",
+                PersonalSummary = "זוהי יחידת בדיקה המשויכת לרמת סעיף לצורך אימות עץ הספרייה."
+            });
                 items = _database.GetStudyItemsForSubject(selectedSubjectId);
             }
 
@@ -3124,10 +3132,24 @@ public sealed class MainForm : Form
             HandleTreeSelection();
 
             var selectedSubjectId = (int)verseNode.Tag!;
-            var tempTopic = $"כרטיס מוצר {DateTime.Now:HHmmss}";
-            var createdItemId = _database.AddStudyItem(selectedSubjectId, tempTopic, "שאלת אימות מוצר", "תשובת אימות מוצר", StudyDifficulty.Medium);
-            _database.UpdateStudyItem(createdItemId, selectedSubjectId, tempTopic + " ערוך", "שאלת אימות מוצר ערוכה", "תשובת אימות מוצר ערוכה", StudyDifficulty.Hard);
-            var createdItem = _database.GetStudyItem(createdItemId) ?? throw new InvalidOperationException("לא ניתן היה לטעון את הכרטיס שנוצר.");
+            var tempTopic = $"יחידת מוצר {DateTime.Now:HHmmss}";
+            var createdItemId = _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = selectedSubjectId,
+                Topic = tempTopic,
+                SourceText = "מקור אימות מוצר",
+                PersonalSummary = "סיכום אישי לאימות מוצר",
+                ManualDifficulty = StudyDifficulty.Medium
+            });
+            _database.UpdateStudyItem(createdItemId, new StudyItemDraftModel
+            {
+                SubjectId = selectedSubjectId,
+                Topic = tempTopic + " ערוך",
+                SourceText = "מקור אימות מוצר ערוך",
+                PersonalSummary = "סיכום אישי לאימות מוצר לאחר עריכה",
+                ManualDifficulty = StudyDifficulty.Hard
+            });
+            var createdItem = _database.GetStudyItem(createdItemId) ?? throw new InvalidOperationException("לא ניתן היה לטעון את יחידת הלימוד שנוצרה.");
 
             var tempTagId = _database.AddTag("תגית-אימות-מוצר");
             _database.SetTagsForStudyItem(createdItemId, [tempTagId]);
@@ -3177,8 +3199,8 @@ public sealed class MainForm : Form
 
             File.WriteAllText(
                 importCsvPath,
-                "נושא,שאלה,תשובה,תגיות" + Environment.NewLine +
-                $"ייבוא מוצר,שאלת ייבוא,תשובת ייבוא,תגית-אימות-מוצר{Environment.NewLine}");
+                "נושא,מקור,סיכום אישי,תגיות" + Environment.NewLine +
+                $"ייבוא מוצר,מקור ייבוא,סיכום ייבוא,תגית-אימות-מוצר{Environment.NewLine}");
             var importedCount = _database.ImportCsvWithMapping(importCsvPath, new CsvImportMapping
             {
                 FallbackSubjectId = selectedSubjectId,
@@ -3186,8 +3208,8 @@ public sealed class MainForm : Form
                 ColumnMappings = new Dictionary<int, CsvFieldType>
                 {
                     [0] = CsvFieldType.Topic,
-                    [1] = CsvFieldType.Question,
-                    [2] = CsvFieldType.Answer,
+                    [1] = CsvFieldType.SourceText,
+                    [2] = CsvFieldType.PersonalSummary,
                     [3] = CsvFieldType.Tags
                 }
             });
@@ -3197,7 +3219,13 @@ public sealed class MainForm : Form
 
             _database.BackupDatabase(backupPath);
             var restoreProbeTopic = $"שחזור זמני {DateTime.Now:HHmmss}";
-            var restoreProbeId = _database.AddStudyItem(selectedSubjectId, restoreProbeTopic, "כרטיס זמני לבדיקה", "יימחק אחרי שחזור");
+            var restoreProbeId = _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = selectedSubjectId,
+                Topic = restoreProbeTopic,
+                SourceText = "יחידת בדיקה זמנית לפני שחזור",
+                PersonalSummary = "היחידה הזאת אמורה להיעלם אחרי שחזור הגיבוי"
+            });
             var backupRestoreReport = _database.RestoreDatabase(backupPath);
             File.WriteAllText(backupRestoreReportPath, _database.BuildBackupRestoreMarkdownReport(backupRestoreReport));
             ReloadTree();
@@ -3213,7 +3241,7 @@ public sealed class MainForm : Form
                 "כפתורי dashboard היו בגובה 28 ורוחב 150, ולכן כיתובים כמו 'התחל חזרה יומית' נחתכו.",
                 "כפתורי מסננים וחיפוש השתמשו בשורות 34 פיקסל עם RTL עברי, מה שגרם לחיתוך אנכי.",
                 "DataGridView-ים לא הגדירו header/row height מספקים לעברית ול-DPI.",
-                "כרטיסי review ו-dialogs השתמשו בכפתורים קשיחים קטנים מדי וללא padding אחיד."
+                "מסכי חזרה ודיאלוגים של יחידות לימוד השתמשו בכפתורים קשיחים קטנים מדי וללא padding אחיד."
             };
             File.WriteAllText(
                 uiAuditReportPath,
@@ -3225,7 +3253,7 @@ public sealed class MainForm : Form
                 - ReviewFilterControl: כפתורי `התחל חזרה`, `המשך סשן`, שורות מסננים.
                 - SearchFilterControl: כפתורי `חפש`, `נקה`, ותיבות טקסט עם גובה קטן מדי.
                 - ReviewSessionControl: כפתורי reveal/rating/pause/skip/review later וסיכום סשן.
-                - StudyCardControl: כפתורי דירוג וניהול, וגובה כללי של הכרטיס.
+                - StudyCardControl: כפתורי דירוג וניהול, וגובה כללי של יחידת הלימוד.
                 - TagsManagerControl / ReviewPresetForm / TagEditForm / AddStudyItemForm / CsvImportForm: כפתורים, labels וטבלאות preview.
                 - MainForm: top menu, action bar, bulk action bar, toolbar buttons.
 
@@ -3277,6 +3305,7 @@ public sealed class MainForm : Form
         finally
         {
             Directory.CreateDirectory(reportDirectory);
+            var reportWriteFailure = (string?)null;
             if (failure is not null)
             {
                 payload["Success"] = false;
@@ -3284,8 +3313,31 @@ public sealed class MainForm : Form
             }
 
             payload["Screenshot"] = request.ScreenshotPath;
-            var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
-            File.WriteAllText(request.ReportPath, json);
+            try
+            {
+                var json = System.Text.Json.JsonSerializer.Serialize(payload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(request.ReportPath, json);
+            }
+            catch (Exception reportException)
+            {
+                reportWriteFailure = reportException.ToString();
+                var fallbackPayload = new Dictionary<string, object?>
+                {
+                    ["Success"] = false,
+                    ["Failure"] = failure?.ToString(),
+                    ["ReportWriteFailure"] = reportWriteFailure,
+                    ["Screenshot"] = request.ScreenshotPath,
+                    ["ValidationReportPath"] = validationReportPath,
+                    ["BackupRestoreReportPath"] = backupRestoreReportPath,
+                    ["PerformanceReportPath"] = performanceReportPath,
+                    ["UiAuditReportPath"] = uiAuditReportPath,
+                    ["ExportCsvPath"] = exportCsvPath,
+                    ["ImportCsvPath"] = importCsvPath
+                };
+
+                var fallbackJson = System.Text.Json.JsonSerializer.Serialize(fallbackPayload, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                File.WriteAllText(request.ReportPath, fallbackJson);
+            }
             await Task.Delay(400);
             BeginInvoke(new Action(Close));
         }
@@ -3451,20 +3503,22 @@ public sealed class MainForm : Form
     {
         var reviewTagId = _database.AddTag("אאא-סשן");
         var items = _database.GetStudyItemsForSubject(subjectId)
-            .Where(item => item.Topic.StartsWith("כרטיס סשן", StringComparison.Ordinal))
+            .Where(item => item.Topic.StartsWith("יחידת סשן", StringComparison.Ordinal))
             .ToList();
 
         while (items.Count < 4)
         {
             var nextNumber = items.Count + 1;
-            _database.AddStudyItem(
-                subjectId,
-                $"כרטיס סשן {nextNumber}",
-                $"שאלת אימות {nextNumber} על הפסוק הנבחר",
-                $"תשובת אימות {nextNumber} לצורך סשן חזרה",
-                nextNumber <= 2 ? StudyDifficulty.Hard : StudyDifficulty.Medium);
+            _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = subjectId,
+                Topic = $"יחידת סשן {nextNumber}",
+                SourceText = $"מקור אימות {nextNumber} על הפסוק הנבחר",
+                PersonalSummary = $"סיכום אימות {nextNumber} לצורך סשן חזרה",
+                ManualDifficulty = nextNumber <= 2 ? StudyDifficulty.Hard : StudyDifficulty.Medium
+            });
             items = _database.GetStudyItemsForSubject(subjectId)
-                .Where(item => item.Topic.StartsWith("כרטיס סשן", StringComparison.Ordinal))
+                .Where(item => item.Topic.StartsWith("יחידת סשן", StringComparison.Ordinal))
                 .ToList();
         }
 
@@ -3485,9 +3539,27 @@ public sealed class MainForm : Form
         var items = _database.GetStudyItemsForSubject(subjectId).ToList();
         if (items.Count < 3)
         {
-            _database.AddStudyItem(subjectId, "כרטיס אימות 1", "אימותחיפוש שאלה על הפסוק הנבחר", "תשובת בדיקה ראשונה");
-            _database.AddStudyItem(subjectId, "כרטיס אימות 2", "כרטיס מסומן כקשה לבדיקה", "תשובת בדיקה שנייה");
-            _database.AddStudyItem(subjectId, "כרטיס אימות 3", "כרטיס נוסף לצומת הספרייה", "תשובת בדיקה שלישית");
+            _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = subjectId,
+                Topic = "יחידת אימות 1",
+                SourceText = "אימותחיפוש מקור על הפסוק הנבחר",
+                PersonalSummary = "סיכום בדיקה ראשון"
+            });
+            _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = subjectId,
+                Topic = "יחידת אימות 2",
+                SourceText = "יחידה שמסומנת כקשה לבדיקה",
+                PersonalSummary = "סיכום בדיקה שני"
+            });
+            _database.AddStudyItem(new StudyItemDraftModel
+            {
+                SubjectId = subjectId,
+                Topic = "יחידת אימות 3",
+                SourceText = "יחידה נוספת לצומת הספרייה",
+                PersonalSummary = "סיכום בדיקה שלישי"
+            });
             items = _database.GetStudyItemsForSubject(subjectId).ToList();
         }
 
@@ -3495,7 +3567,19 @@ public sealed class MainForm : Form
         var item2 = items.Skip(1).FirstOrDefault() ?? item1;
         var item3 = items.Skip(2).FirstOrDefault() ?? item2;
 
-        _database.UpdateStudyItem(item2.Id, item2.SubjectId, item2.Topic, "אימותמתקדם קשה לחיפוש מתקדם", item2.Answer, StudyDifficulty.Hard);
+        _database.UpdateStudyItem(item2.Id, new StudyItemDraftModel
+        {
+            SubjectId = item2.SubjectId,
+            Topic = item2.Topic,
+            SourceText = "אימותמתקדם מקור לחיפוש מתקדם",
+            PshatText = item2.PshatText,
+            KushyaText = item2.KushyaText,
+            TerutzText = item2.TerutzText,
+            ChidushText = item2.ChidushText,
+            PersonalSummary = item2.PersonalSummary,
+            ReviewNotes = item2.ReviewNotes,
+            ManualDifficulty = StudyDifficulty.Hard
+        });
         _database.SetTagsForStudyItem(item1.Id, [searchTagId]);
         _database.SetTagsForStudyItem(item2.Id, [hardTagId]);
         _database.SetTagsForStudyItem(item3.Id, [searchTagId, hardTagId]);

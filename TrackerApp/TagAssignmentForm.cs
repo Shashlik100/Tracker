@@ -50,7 +50,7 @@ public sealed class TagAssignmentForm : Form
         root.Controls.Add(new Label
         {
             Dock = DockStyle.Fill,
-            Text = $"כרטיס: {itemTopic}",
+            Text = $"יחידת לימוד: {itemTopic}",
             TextAlign = ContentAlignment.MiddleRight,
             Font = new Font(Font, FontStyle.Bold)
         }, 0, 0);

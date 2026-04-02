@@ -226,9 +226,18 @@ public sealed partial class AppDatabase
         var difficultyRaw = ReadMappedValue(row, mapping, CsvFieldType.Difficulty);
         var tagsRaw = ReadMappedValue(row, mapping, CsvFieldType.Tags);
 
-        if (string.IsNullOrWhiteSpace(topic) || string.IsNullOrWhiteSpace(sourceText) || string.IsNullOrWhiteSpace(personalSummary))
+        var hasStudyContent =
+            !string.IsNullOrWhiteSpace(sourceText) ||
+            !string.IsNullOrWhiteSpace(pshatText) ||
+            !string.IsNullOrWhiteSpace(kushyaText) ||
+            !string.IsNullOrWhiteSpace(terutzText) ||
+            !string.IsNullOrWhiteSpace(chidushText) ||
+            !string.IsNullOrWhiteSpace(personalSummary) ||
+            !string.IsNullOrWhiteSpace(reviewNotes);
+
+        if (string.IsNullOrWhiteSpace(topic) || !hasStudyContent)
         {
-            throw new InvalidOperationException("חסרים נושא, מקור או סיכום אישי.");
+            throw new InvalidOperationException("חסרים נושא ותוכן לימוד בסיסי ליחידת הלימוד.");
         }
 
         var subjectId = !string.IsNullOrWhiteSpace(forcedSubjectPath)

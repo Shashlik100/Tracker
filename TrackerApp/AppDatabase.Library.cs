@@ -248,13 +248,13 @@ public sealed partial class AppDatabase
         EnsureDefaultLibraryStructure(connection, transaction);
         if (!hasSubjects)
         {
-            SeedSampleCardsIfEmpty(connection, transaction);
+            SeedSampleStudyUnitsIfEmpty(connection, transaction);
         }
 
         SetMetadataValue(connection, transaction, LibrarySeedVersionKey, LibrarySeedFactory.SeedVersion);
     }
 
-    private void SeedSampleCardsIfEmpty(SqliteConnection connection, SqliteTransaction transaction)
+    private void SeedSampleStudyUnitsIfEmpty(SqliteConnection connection, SqliteTransaction transaction)
     {
         using var countCommand = connection.CreateCommand();
         countCommand.Transaction = transaction;
@@ -265,10 +265,27 @@ public sealed partial class AppDatabase
             return;
         }
 
-        foreach (var sample in LibrarySeedFactory.GetSampleCards())
+        foreach (var sample in LibrarySeedFactory.GetSampleStudyUnits())
         {
             var subjectId = EnsureSubjectPath(connection, transaction, sample.Path);
-            InsertStudyItem(connection, transaction, subjectId, sample.Topic, sample.Question, sample.Answer, DateTime.Now);
+            var draft = new StudyItemDraftModel
+            {
+                SubjectId = subjectId,
+                Topic = sample.Draft.Topic,
+                SourceText = sample.Draft.SourceText,
+                PshatText = sample.Draft.PshatText,
+                KushyaText = sample.Draft.KushyaText,
+                TerutzText = sample.Draft.TerutzText,
+                ChidushText = sample.Draft.ChidushText,
+                PersonalSummary = sample.Draft.PersonalSummary,
+                ReviewNotes = sample.Draft.ReviewNotes,
+                ManualDifficulty = sample.Draft.ManualDifficulty
+            };
+            InsertStudyItem(
+                connection,
+                transaction,
+                draft,
+                DateTime.Now);
         }
     }
 

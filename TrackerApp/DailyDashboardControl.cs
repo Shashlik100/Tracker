@@ -278,7 +278,7 @@ public sealed class DailyDashboardControl : UserControl
         _weakSpotsGrid.Columns.Add("LowRatingPercent", "% דירוג נמוך");
         _weakSpotsGrid.Columns.Add("FailureCount", "כשלונות");
         _weakSpotsGrid.Columns.Add("OverdueCount", "באיחור");
-        _weakSpotsGrid.Columns.Add("ItemCount", "כרטיסים");
+        _weakSpotsGrid.Columns.Add("ItemCount", "יחידות לימוד");
 
         var weakSpotsBody = new Panel
         {

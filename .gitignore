@@ -15,6 +15,7 @@ obj/
 artifacts/
 TrackerApp/artifacts/
 TrackerQt/artifacts/
+TrackerQt/
 
 **/AppData/
 **/backups/

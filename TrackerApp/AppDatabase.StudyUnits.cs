@@ -91,7 +91,7 @@ public sealed partial class AppDatabase
             ?? throw new InvalidOperationException("אין רשומת התקדמות ליחידה זו.");
         if (ratings.Count == 0)
         {
-            throw new InvalidOperationException("לא ניתן לסכם חזרת יחידה ללא דירוגי כרטיסים.");
+            throw new InvalidOperationException("לא ניתן לסכם חזרת יחידה ללא דירוגי יחידות התרגול.");
         }
 
         var now = DateTime.Now;
@@ -131,7 +131,7 @@ public sealed partial class AppDatabase
 
         var summary =
             $"תוצאת היחידה: {TranslateStudyUnitResult(result)} | ציון: {score:0.##} | " +
-            $"כרטיסים חזקים: {successfulCards} | כרטיסים חלשים: {failedCards}";
+            $"יחידות תרגול חזקות: {successfulCards} | יחידות תרגול חלשות: {failedCards}";
 
         UpsertStudyUnitProgress(
             connection,

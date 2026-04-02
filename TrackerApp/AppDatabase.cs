@@ -106,7 +106,7 @@ public sealed partial class AppDatabase : IDisposable
         _libraryAuditSummary = AuditAndNormalizeLibrary(connection, transaction);
         if (!hasSubjects)
         {
-            SeedSampleCardsIfEmpty(connection, transaction);
+            SeedSampleStudyUnitsIfEmpty(connection, transaction);
         }
         SetMetadataValue(connection, transaction, LibrarySeedVersionKey, LibrarySeedFactory.SeedVersion);
         _subjects = LoadSubjects(connection);
