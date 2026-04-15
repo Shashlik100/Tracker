@@ -123,7 +123,7 @@ public sealed partial class AppDatabase
                 transaction,
                 "ReviewHistory",
                 "NOT EXISTS(SELECT 1 FROM StudyItems i WHERE i.Id = ReviewHistory.StudyItemId)",
-                "נוקתה היסטוריית חזרה ללא כרטיס מקור.",
+                "נוקתה היסטוריית חזרה ללא יחידת לימוד מקורית.",
                 "היסטוריית חזרה",
                 issues,
                 repairActions,
@@ -191,7 +191,7 @@ public sealed partial class AppDatabase
         builder.AppendLine($"- כפילויות בין אחים לפני תיקון: `{report.DuplicateSiblingGroupsBefore}`");
         builder.AppendLine($"- כפילויות בין אחים אחרי תיקון: `{report.DuplicateSiblingGroupsAfter}`");
         builder.AppendLine($"- orphan nodes שתוקנו: `{report.OrphanSubjectsFixed}`");
-        builder.AppendLine($"- קישורי כרטיסים שבורים שתוקנו: `{report.BrokenStudyItemLinksFixed}`");
+        builder.AppendLine($"- קישורי יחידות לימוד שבורים שתוקנו: `{report.BrokenStudyItemLinksFixed}`");
         builder.AppendLine($"- שיוכי תגיות שבורים שנוקו: `{report.BrokenTagLinksFixed}`");
         builder.AppendLine($"- שורות היסטוריית חזרה שבורות שנוקו: `{report.BrokenReviewHistoryLinksFixed}`");
         builder.AppendLine($"- דגלי עיון חוזר שבורים שנוקו: `{report.BrokenFlagLinksFixed}`");
@@ -304,7 +304,7 @@ public sealed partial class AppDatabase
                 PreservedRoots = preservedRoots,
                 ClearedAreas =
                 [
-                    "כרטיסי לימוד",
+                    "יחידות לימוד",
                     "תגיות ושיוכי תגיות",
                     "היסטוריית חזרות",
                     "פריסטים של חזרה",
@@ -341,7 +341,7 @@ public sealed partial class AppDatabase
         builder.AppendLine("- הסכמה, המיגרציות והעץ המובנה נשמרו.");
         builder.AppendLine();
         builder.AppendLine("## ספירות לפני ואחרי");
-        builder.AppendLine($"- כרטיסים: `{report.Before.StudyItemCount}` -> `{report.After.StudyItemCount}`");
+        builder.AppendLine($"- יחידות לימוד: `{report.Before.StudyItemCount}` -> `{report.After.StudyItemCount}`");
         builder.AppendLine($"- תגיות: `{report.Before.TagCount}` -> `{report.After.TagCount}`");
         builder.AppendLine($"- שיוכי תגיות: `{report.Before.StudyItemTagCount}` -> `{report.After.StudyItemTagCount}`");
         builder.AppendLine($"- היסטוריית חזרות: `{report.Before.ReviewHistoryCount}` -> `{report.After.ReviewHistoryCount}`");
@@ -494,23 +494,23 @@ public sealed partial class AppDatabase
 
             issues.Add(new ValidationIssueModel
             {
-                Area = "כרטיסים",
+                Area = "יחידות לימוד",
                 Severity = repaired ? "אזהרה" : "שגיאה",
                 Message = repaired
-                    ? $"כרטיס {brokenItem.Id} שויך מחדש לצומת ספרייה תקף."
-                    : $"כרטיס {brokenItem.Id} איבד קישור לספרייה ולא ניתן היה לשחזר אותו אוטומטית.",
+                    ? $"יחידת לימוד {brokenItem.Id} שויכה מחדש לצומת ספרייה תקף."
+                    : $"יחידת לימוד {brokenItem.Id} איבדה קישור לספרייה ולא ניתן היה לשחזר אותו אוטומטית.",
                 WasFixed = repaired
             });
 
             if (!repaired)
             {
-                remainingIssues.Add($"כרטיס {brokenItem.Id} דורש שיוך ידני מחדש לספרייה.");
+                remainingIssues.Add($"יחידת לימוד {brokenItem.Id} דורשת שיוך ידני מחדש לספרייה.");
             }
         }
 
         if (fixedCount > 0)
         {
-            actions.Add($"שוחזרו {fixedCount} קישורי כרטיסים לצמתים קיימים לפי הנתיב השמור.");
+            actions.Add($"שוחזרו {fixedCount} קישורי יחידות לימוד לצמתים קיימים לפי הנתיב השמור.");
         }
 
         return fixedCount;
@@ -695,7 +695,7 @@ public sealed partial class AppDatabase
             {
                 Area = "סשנים מושהים",
                 Severity = "אזהרה",
-                Message = $"סשן מושהה {session.Id} הכיל כרטיסים שכבר אינם קיימים.",
+                Message = $"סשן מושהה {session.Id} הכיל יחידות לימוד שכבר אינן קיימות.",
                 WasFixed = autoRepair
             });
 
@@ -746,7 +746,7 @@ public sealed partial class AppDatabase
 
         if (fixedCount > 0)
         {
-            actions.Add($"תוקנו {fixedCount} סשנים מושהים עם payload שבור או עם כרטיסים חסרים.");
+            actions.Add($"תוקנו {fixedCount} סשנים מושהים עם payload שבור או עם יחידות לימוד חסרות.");
         }
 
         return fixedCount;

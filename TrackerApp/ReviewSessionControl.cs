@@ -8,10 +8,10 @@ public sealed class ReviewSessionControl : UserControl
     private readonly Label _topicLabel = new();
     private readonly Label _pathLabel = new();
     private readonly Label _metaLabel = new();
-    private readonly Label _questionTextLabel = new();
-    private readonly TextBox _answerTextBox = new();
-    private readonly Panel _answerPanel = new();
-    private readonly Button _showAnswerButton = new();
+    private readonly Label _promptTextLabel = new();
+    private readonly TextBox _responseTextBox = new();
+    private readonly Panel _responsePanel = new();
+    private readonly Button _showComparisonButton = new();
     private readonly FlowLayoutPanel _ratingButtonsPanel = new();
     private readonly Panel _summaryPanel = new();
     private readonly Label _summaryTitleLabel = new();
@@ -24,7 +24,7 @@ public sealed class ReviewSessionControl : UserControl
     private readonly Button _reviewLaterButton = new();
     private readonly Label _orderModeLabel = new();
 
-    private bool _answerVisible;
+    private bool _comparisonVisible;
 
     public event EventHandler? RevealAnswerRequested;
     public event EventHandler<ReviewRating>? RatingRequested;
@@ -46,7 +46,7 @@ public sealed class ReviewSessionControl : UserControl
     }
 
     public bool IsSummaryVisible => _summaryPanel.Visible;
-    public bool IsAnswerVisible => _answerVisible;
+    public bool IsAnswerVisible => _comparisonVisible;
 
     public void ShowReviewItem(StudyItemModel item, ReviewSessionProgress progress, string sessionTitle, ReviewSessionOrderMode orderMode)
     {
@@ -58,8 +58,8 @@ public sealed class ReviewSessionControl : UserControl
         _pathLabel.Text = item.SubjectPath.Replace(" > ", " / ", StringComparison.Ordinal);
         _metaLabel.Text = $"שלב: {item.Level} | קושי: {TranslateDifficulty(item.Difficulty)} | לביצוע: {item.DueDate:dd/MM/yyyy}";
         _orderModeLabel.Text = $"סדר סשן: {TranslateOrderMode(orderMode)}";
-        _questionTextLabel.Text = item.Question;
-        _answerTextBox.Text = item.Answer;
+        _promptTextLabel.Text = item.ReviewPromptText;
+        _responseTextBox.Text = item.ReviewResponseText;
         SetAnswerVisible(false);
         Visible = true;
         FocusForReview();
@@ -71,20 +71,20 @@ public sealed class ReviewSessionControl : UserControl
         _summaryPanel.Visible = true;
         _summaryTitleLabel.Text = summary.Title;
         _summaryStatsLabel.Text =
-            $"סה\"כ כרטיסים: {summary.TotalCount}{Environment.NewLine}" +
+            $"סה\"כ יחידות: {summary.TotalCount}{Environment.NewLine}" +
             $"הושלמו: {summary.CompletedCount}{Environment.NewLine}" +
             $"נכשלו: {summary.FailedCount}{Environment.NewLine}" +
             $"דורגו גבוה: {summary.HighRatingCount}{Environment.NewLine}" +
             $"דורגו נמוך: {summary.LowRatingCount}{Environment.NewLine}" +
-            $"מסומנים לעיון חוזר: {summary.ReviewLaterCount}{Environment.NewLine}" +
+            $"מסומנות לעיון חוזר: {summary.ReviewLaterCount}{Environment.NewLine}" +
             $"דולגו: {summary.SkippedCount}{Environment.NewLine}" +
             $"נשארו: {summary.RemainingCount}" +
             (string.IsNullOrWhiteSpace(summary.AdditionalSummaryText)
                 ? string.Empty
                 : $"{Environment.NewLine}{summary.AdditionalSummaryText}");
         _summaryHintLabel.Text = summary.FailedCount > 0
-            ? "אפשר להפעיל עכשיו סשן נוסף רק על הכרטיסים שנכשלו."
-            : "אין כרטיסים שנכשלו בסשן הזה.";
+            ? "אפשר להפעיל עכשיו סשן נוסף רק על יחידות הלימוד שדורגו חלש."
+            : "אין יחידות לימוד שדורגו חלש בסשן הזה.";
         _retryFailedButton.Visible = summary.FailedCount > 0;
         FocusForReview();
     }
@@ -100,13 +100,13 @@ public sealed class ReviewSessionControl : UserControl
         _contentRoot.Visible = true;
         _summaryPanel.Visible = false;
         _titleLabel.Text = "מסך חזרה";
-        _progressLabel.Text = "בחרו סשן חזרה רגיל או חזרה על כרטיסים נבחרים.";
+        _progressLabel.Text = "בחרו סשן חזרה רגיל או סשן על יחידות לימוד נבחרות.";
         _topicLabel.Text = "אין סשן פעיל";
         _pathLabel.Text = string.Empty;
-        _metaLabel.Text = "רווח או Enter להצגת תשובה, מספרים 1-5 לדירוג.";
+        _metaLabel.Text = "רווח או Enter להצגת חומר ההשוואה, מספרים 1-5 לדירוג.";
         _orderModeLabel.Text = "סדר סשן: לפי הסדר הרגיל";
-        _questionTextLabel.Text = "פתחו חזרה יומית/מסוננת או הפעילו חזרה על כרטיסים שנבחרו.";
-        _answerTextBox.Text = string.Empty;
+        _promptTextLabel.Text = "פתחו חזרה יומית/מסוננת או הפעילו חזרה על יחידות הלימוד שנבחרו.";
+        _responseTextBox.Text = string.Empty;
         SetAnswerVisible(false);
     }
 
@@ -134,13 +134,13 @@ public sealed class ReviewSessionControl : UserControl
             return false;
         }
 
-        if (!_answerVisible && (keyData == Keys.Space || keyData == Keys.Enter))
+        if (!_comparisonVisible && (keyData == Keys.Space || keyData == Keys.Enter))
         {
             RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
             return true;
         }
 
-        if (_answerVisible && TryMapRatingShortcut(keyData, out var rating))
+        if (_comparisonVisible && TryMapRatingShortcut(keyData, out var rating))
         {
             RatingRequested?.Invoke(this, rating);
             return true;
@@ -175,7 +175,7 @@ public sealed class ReviewSessionControl : UserControl
 
     public void AutomationRevealAnswer()
     {
-        if (!_answerVisible)
+        if (!_comparisonVisible)
         {
             RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
         }
@@ -183,7 +183,7 @@ public sealed class ReviewSessionControl : UserControl
 
     public void AutomationRate(ReviewRating rating)
     {
-        if (_answerVisible)
+        if (_comparisonVisible)
         {
             RatingRequested?.Invoke(this, rating);
         }
@@ -299,31 +299,31 @@ public sealed class ReviewSessionControl : UserControl
         detailsPanel.Controls.Add(_metaLabel, 0, 2);
         detailsPanel.Controls.Add(_orderModeLabel, 0, 3);
 
-        var questionPanel = CreateTextPanel("שאלה", out var questionBodyHost);
-        _questionTextLabel.Dock = DockStyle.Fill;
-        _questionTextLabel.BackColor = Color.White;
-        _questionTextLabel.BorderStyle = BorderStyle.FixedSingle;
-        _questionTextLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
-        _questionTextLabel.TextAlign = ContentAlignment.TopRight;
-        _questionTextLabel.Padding = new Padding(12);
-        _questionTextLabel.RightToLeft = RightToLeft.Yes;
-        questionBodyHost.Controls.Add(_questionTextLabel);
+        var promptPanel = CreateTextPanel("עוגן לימוד", out var promptBodyHost);
+        _promptTextLabel.Dock = DockStyle.Fill;
+        _promptTextLabel.BackColor = Color.White;
+        _promptTextLabel.BorderStyle = BorderStyle.FixedSingle;
+        _promptTextLabel.Font = new Font("Microsoft Sans Serif", 16F, FontStyle.Bold);
+        _promptTextLabel.TextAlign = ContentAlignment.TopRight;
+        _promptTextLabel.Padding = new Padding(12);
+        _promptTextLabel.RightToLeft = RightToLeft.Yes;
+        promptBodyHost.Controls.Add(_promptTextLabel);
 
-        var answerOuterPanel = CreateTextPanel("תשובה", out var answerBodyHost);
-        _answerPanel.Dock = DockStyle.Fill;
-        _answerPanel.RightToLeft = RightToLeft.Yes;
+        var responseOuterPanel = CreateTextPanel("חומר להשוואה", out var responseBodyHost);
+        _responsePanel.Dock = DockStyle.Fill;
+        _responsePanel.RightToLeft = RightToLeft.Yes;
 
-        _answerTextBox.Dock = DockStyle.Fill;
-        _answerTextBox.Multiline = true;
-        _answerTextBox.ReadOnly = true;
-        _answerTextBox.ScrollBars = ScrollBars.Vertical;
-        _answerTextBox.BorderStyle = BorderStyle.FixedSingle;
-        _answerTextBox.BackColor = Color.White;
-        _answerTextBox.Font = new Font("Microsoft Sans Serif", 12F, FontStyle.Regular);
-        _answerTextBox.RightToLeft = RightToLeft.Yes;
+        _responseTextBox.Dock = DockStyle.Fill;
+        _responseTextBox.Multiline = true;
+        _responseTextBox.ReadOnly = true;
+        _responseTextBox.ScrollBars = ScrollBars.Vertical;
+        _responseTextBox.BorderStyle = BorderStyle.FixedSingle;
+        _responseTextBox.BackColor = Color.White;
+        _responseTextBox.Font = new Font("Microsoft Sans Serif", 12F, FontStyle.Regular);
+        _responseTextBox.RightToLeft = RightToLeft.Yes;
 
-        _answerPanel.Controls.Add(_answerTextBox);
-        answerBodyHost.Controls.Add(_answerPanel);
+        _responsePanel.Controls.Add(_responseTextBox);
+        responseBodyHost.Controls.Add(_responsePanel);
 
         var contentSplit = new SplitContainer
         {
@@ -348,8 +348,8 @@ public sealed class ReviewSessionControl : UserControl
             var maxTarget = availableHeight - contentSplit.Panel2MinSize;
             contentSplit.SplitterDistance = Math.Min(target, maxTarget);
         };
-        contentSplit.Panel1.Controls.Add(questionPanel);
-        contentSplit.Panel2.Controls.Add(answerOuterPanel);
+        contentSplit.Panel1.Controls.Add(promptPanel);
+        contentSplit.Panel2.Controls.Add(responseOuterPanel);
 
         var actionsPanel = new Panel
         {
@@ -364,16 +364,16 @@ public sealed class ReviewSessionControl : UserControl
         {
             Dock = DockStyle.Top,
             Height = 32,
-            Text = "קיצורים: רווח/Enter תשובה | 1-5 דירוג | S דלג | R עיון חוזר | P השהה | Esc סגירה",
+            Text = "קיצורים: רווח/Enter לחומר השוואה | 1-5 דירוג | S דלג | R עיון חוזר | P השהה | Esc סגירה",
             TextAlign = ContentAlignment.MiddleRight,
             RightToLeft = RightToLeft.Yes
         };
 
-        _showAnswerButton.Text = "הצג תשובה";
-        _showAnswerButton.Width = 132;
-        _showAnswerButton.Height = 40;
-        UiLayoutHelper.StyleActionButton(_showAnswerButton, 132, 40);
-        _showAnswerButton.Click += (_, _) => RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
+        _showComparisonButton.Text = "הצג חומר להשוואה";
+        _showComparisonButton.Width = 164;
+        _showComparisonButton.Height = 40;
+        UiLayoutHelper.StyleActionButton(_showComparisonButton, 164, 40);
+        _showComparisonButton.Click += (_, _) => RevealAnswerRequested?.Invoke(this, EventArgs.Empty);
 
         _skipButton.Text = "דלג";
         _skipButton.Width = 96;
@@ -396,7 +396,7 @@ public sealed class ReviewSessionControl : UserControl
         _ratingButtonsPanel.Controls.Add(CreateRatingButton("4 טוב", ReviewRating.Easy, Color.FromArgb(206, 232, 234)));
         _ratingButtonsPanel.Controls.Add(CreateRatingButton("3 בסדר", ReviewRating.Good, Color.FromArgb(221, 235, 210)));
         _ratingButtonsPanel.Controls.Add(CreateRatingButton("2 חלש", ReviewRating.Hard, Color.FromArgb(240, 228, 204)));
-        _ratingButtonsPanel.Controls.Add(CreateRatingButton("1 גרוע", ReviewRating.Again, Color.FromArgb(241, 216, 208)));
+        _ratingButtonsPanel.Controls.Add(CreateRatingButton("1 צריך חיזוק", ReviewRating.Again, Color.FromArgb(241, 216, 208)));
 
         var primaryButtonsPanel = new FlowLayoutPanel
         {
@@ -410,7 +410,7 @@ public sealed class ReviewSessionControl : UserControl
         };
         primaryButtonsPanel.Controls.Add(_reviewLaterButton);
         primaryButtonsPanel.Controls.Add(_skipButton);
-        primaryButtonsPanel.Controls.Add(_showAnswerButton);
+        primaryButtonsPanel.Controls.Add(_showComparisonButton);
 
         var ratingHostPanel = new Panel
         {
@@ -489,10 +489,10 @@ public sealed class ReviewSessionControl : UserControl
             RightToLeft = RightToLeft.Yes
         };
 
-        _retryFailedButton.Text = "סשן נוסף על הנכשלים";
-        _retryFailedButton.Width = 184;
+        _retryFailedButton.Text = "סשן נוסף על היחידות שדורגו חלש";
+        _retryFailedButton.Width = 220;
         _retryFailedButton.Height = 38;
-        UiLayoutHelper.StyleActionButton(_retryFailedButton, 184, 38);
+        UiLayoutHelper.StyleActionButton(_retryFailedButton, 220, 38);
         _retryFailedButton.Click += (_, _) => RetryFailedRequested?.Invoke(this, EventArgs.Empty);
 
         _closeSummaryButton.Text = "חזרה למסך הקודם";
@@ -516,11 +516,11 @@ public sealed class ReviewSessionControl : UserControl
         var button = new Button
         {
             Text = text,
-            Width = 104,
+            Width = 120,
             Height = 36,
             BackColor = backColor
         };
-        UiLayoutHelper.StyleActionButton(button, 104, 36);
+        UiLayoutHelper.StyleActionButton(button, 120, 36);
         button.Click += (_, _) => RatingRequested?.Invoke(this, rating);
         return button;
     }
@@ -554,9 +554,9 @@ public sealed class ReviewSessionControl : UserControl
 
     private void SetAnswerVisible(bool isVisible)
     {
-        _answerVisible = isVisible;
-        _answerPanel.Visible = isVisible;
-        _showAnswerButton.Enabled = !isVisible;
+        _comparisonVisible = isVisible;
+        _responsePanel.Visible = isVisible;
+        _showComparisonButton.Enabled = !isVisible;
         foreach (Control control in _ratingButtonsPanel.Controls)
         {
             control.Enabled = isVisible;
@@ -619,7 +619,7 @@ public sealed class ReviewSessionControl : UserControl
         {
             ReviewSessionOrderMode.Random => "אקראי",
             ReviewSessionOrderMode.HardFirst => "מהקשים לקלים",
-            ReviewSessionOrderMode.FailedFirst => "מהנכשלים תחילה",
+            ReviewSessionOrderMode.FailedFirst => "מהחלשים תחילה",
             ReviewSessionOrderMode.NewFirst => "מהחדשים תחילה",
             _ => "לפי הסדר הרגיל"
         };

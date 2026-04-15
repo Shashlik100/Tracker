@@ -129,7 +129,7 @@ public sealed class TagsManagerControl : UserControl
                 DeleteTagRequested?.Invoke(this, SelectedTag);
             }
         };
-        var filterButton = CreateButton("הצג כרטיסים");
+        var filterButton = CreateButton("הצג יחידות לימוד");
         filterButton.Click += (_, _) =>
         {
             if (SelectedTag is not null)
@@ -185,8 +185,8 @@ public sealed class TagsManagerControl : UserControl
 
         _detailsLabel.Text =
             $"שם תגית: {SelectedTag.Name}{Environment.NewLine}{Environment.NewLine}" +
-            $"מספר כרטיסים משויכים: {SelectedTag.UsageCount}{Environment.NewLine}{Environment.NewLine}" +
-            "אפשר ליצור, לערוך, למחוק או להציג את כל הכרטיסים של תגית זו.";
+            $"מספר יחידות לימוד משויכות: {SelectedTag.UsageCount}{Environment.NewLine}{Environment.NewLine}" +
+            "אפשר ליצור, לערוך, למחוק או להציג את כל יחידות הלימוד של תגית זו.";
     }
 
     private void DrawTagListItem(object? sender, DrawItemEventArgs e)

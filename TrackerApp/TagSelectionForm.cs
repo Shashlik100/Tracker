@@ -15,7 +15,7 @@ public sealed class TagSelectionForm : Form
         ClientSize = new Size(420, 470);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
         BuildLayout(tags, initiallySelected ?? []);
         UiLayoutHelper.ApplyRecursive(this);
@@ -31,7 +31,8 @@ public sealed class TagSelectionForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 1,
             RowCount = 2,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
         };
         root.RowStyles.Add(new RowStyle(SizeType.Percent, 100F));
         root.RowStyles.Add(new RowStyle(SizeType.Absolute, 64F));

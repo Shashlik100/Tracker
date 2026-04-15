@@ -38,8 +38,13 @@ public sealed class StudyItemModel
     public string SubjectPath { get; init; } = string.Empty;
     public string RootCategory { get; init; } = string.Empty;
     public string Topic { get; init; } = string.Empty;
-    public string Question { get; init; } = string.Empty;
-    public string Answer { get; init; } = string.Empty;
+    public string SourceText { get; init; } = string.Empty;
+    public string PshatText { get; init; } = string.Empty;
+    public string KushyaText { get; init; } = string.Empty;
+    public string TerutzText { get; init; } = string.Empty;
+    public string ChidushText { get; init; } = string.Empty;
+    public string PersonalSummary { get; init; } = string.Empty;
+    public string ReviewNotes { get; init; } = string.Empty;
     public DateTime CreatedAt { get; init; }
     public DateTime ModifiedAt { get; init; }
     public DateTime DueDate { get; init; }
@@ -56,6 +61,58 @@ public sealed class StudyItemModel
     public bool IsDue => DueDate.Date <= DateTime.Today;
     public bool IsMastered => IntervalDays >= 30 || RepetitionCount >= 5;
     public StudyDifficulty Difficulty => StudyDifficultyClassifier.Resolve(ManualDifficulty, EaseFactor, Lapses, LastRating);
+    public string Question => SourceText;
+    public string Answer => PersonalSummary;
+    public string ReviewPromptText =>
+        FirstNonEmpty(KushyaText, SourceText, Topic, PersonalSummary);
+    public string ReviewResponseText =>
+        string.Join(
+            Environment.NewLine + Environment.NewLine,
+            GetFilledSections(
+                ("תירוץ", TerutzText),
+                ("סיכום אישי", PersonalSummary),
+                ("פשט", PshatText),
+                ("חידוש", ChidushText),
+                ("הערות חזרה", ReviewNotes)));
+
+    public IReadOnlyList<(string Title, string Value)> GetDisplaySections()
+    {
+        return GetFilledSections(
+            ("מקור", SourceText),
+            ("פשט", PshatText),
+            ("קושיה", KushyaText),
+            ("תירוץ", TerutzText),
+            ("חידוש", ChidushText),
+            ("סיכום אישי", PersonalSummary),
+            ("הערות חזרה", ReviewNotes));
+    }
+
+    private static string FirstNonEmpty(params string[] values)
+    {
+        return values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value))?.Trim() ?? string.Empty;
+    }
+
+    private static IReadOnlyList<(string Title, string Value)> GetFilledSections(params (string Title, string Value)[] sections)
+    {
+        return sections
+            .Where(section => !string.IsNullOrWhiteSpace(section.Value))
+            .Select(section => (section.Title, section.Value.Trim()))
+            .ToArray();
+    }
+}
+
+public sealed class StudyItemDraftModel
+{
+    public int SubjectId { get; init; }
+    public string Topic { get; init; } = string.Empty;
+    public string SourceText { get; init; } = string.Empty;
+    public string PshatText { get; init; } = string.Empty;
+    public string KushyaText { get; init; } = string.Empty;
+    public string TerutzText { get; init; } = string.Empty;
+    public string ChidushText { get; init; } = string.Empty;
+    public string PersonalSummary { get; init; } = string.Empty;
+    public string ReviewNotes { get; init; } = string.Empty;
+    public StudyDifficulty? ManualDifficulty { get; init; }
 }
 
 public enum ReviewRating
@@ -337,8 +394,13 @@ public sealed class PrintableScheduleItem
 {
     public string SubjectPath { get; init; } = string.Empty;
     public string Topic { get; init; } = string.Empty;
-    public string Question { get; init; } = string.Empty;
-    public string Answer { get; init; } = string.Empty;
+    public string SourceText { get; init; } = string.Empty;
+    public string PersonalSummary { get; init; } = string.Empty;
+    public string PshatText { get; init; } = string.Empty;
+    public string KushyaText { get; init; } = string.Empty;
+    public string TerutzText { get; init; } = string.Empty;
+    public string ChidushText { get; init; } = string.Empty;
+    public string ReviewNotes { get; init; } = string.Empty;
     public DateTime DueDate { get; init; }
 }
 
@@ -492,8 +554,8 @@ public sealed class CsvImportPreviewRow
 {
     public int RowNumber { get; init; }
     public string Topic { get; init; } = string.Empty;
-    public string Question { get; init; } = string.Empty;
-    public string Answer { get; init; } = string.Empty;
+    public string SourceText { get; init; } = string.Empty;
+    public string PersonalSummary { get; init; } = string.Empty;
     public string SubjectPath { get; init; } = string.Empty;
     public string Difficulty { get; init; } = string.Empty;
     public string Tags { get; init; } = string.Empty;
@@ -512,13 +574,20 @@ public enum CsvFieldType
 {
     Ignore = 0,
     Topic = 1,
-    Question = 2,
-    Answer = 3,
-    Book = 4,
-    Chapter = 5,
-    Verse = 6,
-    Difficulty = 7,
-    Tags = 8
+    SourceText = 2,
+    PshatText = 3,
+    KushyaText = 4,
+    TerutzText = 5,
+    ChidushText = 6,
+    PersonalSummary = 7,
+    ReviewNotes = 8,
+    Book = 9,
+    Chapter = 10,
+    Verse = 11,
+    Difficulty = 12,
+    Tags = 13,
+    Question = 14,
+    Answer = 15
 }
 
 public sealed class CsvImportMapping

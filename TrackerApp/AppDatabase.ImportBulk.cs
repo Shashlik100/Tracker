@@ -17,8 +17,8 @@ public sealed partial class AppDatabase
         using var command = connection.CreateCommand();
         command.CommandText =
             $"""
-             SELECT Id, SubjectId, Topic, Question, Answer, CreatedAt, ModifiedAt, DueDate, Level,
-                    TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
+             SELECT Id, SubjectId, Topic, Question, Answer, SourceText, PshatText, KushyaText, TerutzText, ChidushText, PersonalSummary, ReviewNotes,
+                    CreatedAt, ModifiedAt, DueDate, Level, TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
              FROM StudyItems
              WHERE Id IN ({string.Join(",", ids)})
              ORDER BY date(DueDate) ASC, Topic COLLATE NOCASE ASC;
@@ -129,8 +129,7 @@ public sealed partial class AppDatabase
 
         for (var index = 0; index < bodyRows.Length; index++)
         {
-            var row = bodyRows[index];
-            previewRows.Add(BuildImportPreviewRow(index + 1, row, mapping));
+            previewRows.Add(BuildImportPreviewRow(index + 1, bodyRows[index], mapping));
         }
 
         return new CsvImportPreviewResult
@@ -166,15 +165,7 @@ public sealed partial class AppDatabase
 
             var parsed = ParseImportRow(bodyRows[index], mapping, previewRow.SubjectPath, createTags: false);
             var tagIds = EnsureTagIds(connection, transaction, parsed.TagNames);
-            InsertStudyItemWithTags(
-                connection,
-                transaction,
-                parsed.SubjectId,
-                parsed.Topic,
-                parsed.Question,
-                parsed.Answer,
-                parsed.Difficulty,
-                tagIds);
+            InsertStudyItemWithTags(connection, transaction, parsed, tagIds);
             imported++;
         }
 
@@ -192,8 +183,8 @@ public sealed partial class AppDatabase
             {
                 RowNumber = rowNumber,
                 Topic = parsed.Topic,
-                Question = parsed.Question,
-                Answer = parsed.Answer,
+                SourceText = parsed.SourceText,
+                PersonalSummary = parsed.PersonalSummary,
                 SubjectPath = GetSubjectPath(parsed.SubjectId),
                 Difficulty = parsed.Difficulty?.ToString() ?? string.Empty,
                 Tags = string.Join(", ", parsed.TagNames),
@@ -207,8 +198,8 @@ public sealed partial class AppDatabase
             {
                 RowNumber = rowNumber,
                 Topic = ReadMappedValue(row, mapping, CsvFieldType.Topic),
-                Question = ReadMappedValue(row, mapping, CsvFieldType.Question),
-                Answer = ReadMappedValue(row, mapping, CsvFieldType.Answer),
+                SourceText = ReadPrimaryMappedValue(row, mapping, CsvFieldType.SourceText, CsvFieldType.Question),
+                PersonalSummary = ReadPrimaryMappedValue(row, mapping, CsvFieldType.PersonalSummary, CsvFieldType.Answer),
                 SubjectPath = string.Empty,
                 Difficulty = ReadMappedValue(row, mapping, CsvFieldType.Difficulty),
                 Tags = ReadMappedValue(row, mapping, CsvFieldType.Tags),
@@ -218,20 +209,35 @@ public sealed partial class AppDatabase
         }
     }
 
-    private (int SubjectId, string Topic, string Question, string Answer, StudyDifficulty? Difficulty, IReadOnlyList<int> TagIds, IReadOnlyList<string> TagNames) ParseImportRow(string[] row, CsvImportMapping mapping, string? forcedSubjectPath = null, bool createTags = false)
+    private (int SubjectId, string Topic, string SourceText, string PshatText, string KushyaText, string TerutzText, string ChidushText, string PersonalSummary, string ReviewNotes, StudyDifficulty? Difficulty, IReadOnlyList<int> TagIds, IReadOnlyList<string> TagNames)
+        ParseImportRow(string[] row, CsvImportMapping mapping, string? forcedSubjectPath = null, bool createTags = false)
     {
         var topic = ReadMappedValue(row, mapping, CsvFieldType.Topic);
-        var question = ReadMappedValue(row, mapping, CsvFieldType.Question);
-        var answer = ReadMappedValue(row, mapping, CsvFieldType.Answer);
+        var sourceText = ReadPrimaryMappedValue(row, mapping, CsvFieldType.SourceText, CsvFieldType.Question);
+        var pshatText = ReadMappedValue(row, mapping, CsvFieldType.PshatText);
+        var kushyaText = ReadMappedValue(row, mapping, CsvFieldType.KushyaText);
+        var terutzText = ReadMappedValue(row, mapping, CsvFieldType.TerutzText);
+        var chidushText = ReadMappedValue(row, mapping, CsvFieldType.ChidushText);
+        var personalSummary = ReadPrimaryMappedValue(row, mapping, CsvFieldType.PersonalSummary, CsvFieldType.Answer);
+        var reviewNotes = ReadMappedValue(row, mapping, CsvFieldType.ReviewNotes);
         var book = ReadMappedValue(row, mapping, CsvFieldType.Book);
         var chapter = ReadMappedValue(row, mapping, CsvFieldType.Chapter);
         var verse = ReadMappedValue(row, mapping, CsvFieldType.Verse);
         var difficultyRaw = ReadMappedValue(row, mapping, CsvFieldType.Difficulty);
         var tagsRaw = ReadMappedValue(row, mapping, CsvFieldType.Tags);
 
-        if (string.IsNullOrWhiteSpace(topic) || string.IsNullOrWhiteSpace(question) || string.IsNullOrWhiteSpace(answer))
+        var hasStudyContent =
+            !string.IsNullOrWhiteSpace(sourceText) ||
+            !string.IsNullOrWhiteSpace(pshatText) ||
+            !string.IsNullOrWhiteSpace(kushyaText) ||
+            !string.IsNullOrWhiteSpace(terutzText) ||
+            !string.IsNullOrWhiteSpace(chidushText) ||
+            !string.IsNullOrWhiteSpace(personalSummary) ||
+            !string.IsNullOrWhiteSpace(reviewNotes);
+
+        if (string.IsNullOrWhiteSpace(topic) || !hasStudyContent)
         {
-            throw new InvalidOperationException("חסרים נושא, שאלה או תשובה.");
+            throw new InvalidOperationException("חסרים נושא ותוכן לימוד בסיסי ליחידת הלימוד.");
         }
 
         var subjectId = !string.IsNullOrWhiteSpace(forcedSubjectPath)
@@ -241,17 +247,25 @@ public sealed partial class AppDatabase
         var difficulty = ParseDifficulty(difficultyRaw);
         var tagNames = SplitTagNames(tagsRaw);
         var tagIds = createTags ? tagNames.Select(AddTag).Distinct().ToArray() : Array.Empty<int>();
-        return (subjectId, topic.Trim(), question.Trim(), answer.Trim(), difficulty, tagIds, tagNames);
+        return (
+            subjectId,
+            topic.Trim(),
+            sourceText.Trim(),
+            pshatText.Trim(),
+            kushyaText.Trim(),
+            terutzText.Trim(),
+            chidushText.Trim(),
+            personalSummary.Trim(),
+            reviewNotes.Trim(),
+            difficulty,
+            tagIds,
+            tagNames);
     }
 
     private int InsertStudyItemWithTags(
         SqliteConnection connection,
         SqliteTransaction transaction,
-        int subjectId,
-        string topic,
-        string question,
-        string answer,
-        StudyDifficulty? difficulty,
+        (int SubjectId, string Topic, string SourceText, string PshatText, string KushyaText, string TerutzText, string ChidushText, string PersonalSummary, string ReviewNotes, StudyDifficulty? Difficulty, IReadOnlyList<int> TagIds, IReadOnlyList<string> TagNames) parsed,
         IReadOnlyList<int> tagIds)
     {
         using var command = connection.CreateCommand();
@@ -260,24 +274,33 @@ public sealed partial class AppDatabase
         command.CommandText =
             """
             INSERT INTO StudyItems (
-                SubjectId, Topic, Question, Answer, SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
+                SubjectId, Topic, Question, Answer, SourceText, PshatText, KushyaText, TerutzText, ChidushText, PersonalSummary, ReviewNotes,
+                SubjectPathCache, RootCategoryCache, CreatedAt, ModifiedAt, DueDate, Level,
                 TotalReviews, RepetitionCount, Lapses, EaseFactor, IntervalDays, LastRating, LastReviewedAt, ManualDifficulty
             )
             VALUES (
-                $subjectId, $topic, $question, $answer, $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
+                $subjectId, $topic, $question, $answer, $sourceText, $pshatText, $kushyaText, $terutzText, $chidushText, $personalSummary, $reviewNotes,
+                $subjectPathCache, $rootCategoryCache, $createdAt, $modifiedAt, $dueDate, 1,
                 0, 0, 0, 2.5, 0, '', NULL, $manualDifficulty
             );
             """;
-        command.Parameters.AddWithValue("$subjectId", subjectId);
-        command.Parameters.AddWithValue("$topic", topic);
-        command.Parameters.AddWithValue("$question", question);
-        command.Parameters.AddWithValue("$answer", answer);
-        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(subjectId));
-        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(subjectId));
+        command.Parameters.AddWithValue("$subjectId", parsed.SubjectId);
+        command.Parameters.AddWithValue("$topic", parsed.Topic);
+        command.Parameters.AddWithValue("$question", parsed.SourceText);
+        command.Parameters.AddWithValue("$answer", parsed.PersonalSummary);
+        command.Parameters.AddWithValue("$sourceText", parsed.SourceText);
+        command.Parameters.AddWithValue("$pshatText", parsed.PshatText);
+        command.Parameters.AddWithValue("$kushyaText", parsed.KushyaText);
+        command.Parameters.AddWithValue("$terutzText", parsed.TerutzText);
+        command.Parameters.AddWithValue("$chidushText", parsed.ChidushText);
+        command.Parameters.AddWithValue("$personalSummary", parsed.PersonalSummary);
+        command.Parameters.AddWithValue("$reviewNotes", parsed.ReviewNotes);
+        command.Parameters.AddWithValue("$subjectPathCache", GetSubjectPath(parsed.SubjectId));
+        command.Parameters.AddWithValue("$rootCategoryCache", GetRootCategory(parsed.SubjectId));
         command.Parameters.AddWithValue("$createdAt", FormatDate(now));
         command.Parameters.AddWithValue("$modifiedAt", FormatDate(now));
         command.Parameters.AddWithValue("$dueDate", FormatDate(now.Date));
-        command.Parameters.AddWithValue("$manualDifficulty", difficulty?.ToString() ?? string.Empty);
+        command.Parameters.AddWithValue("$manualDifficulty", parsed.Difficulty?.ToString() ?? string.Empty);
         command.ExecuteNonQuery();
 
         var itemId = GetLastInsertRowId(connection, transaction);
@@ -341,6 +364,12 @@ public sealed partial class AppDatabase
         }
 
         return match.Key >= 0 && match.Key < row.Length ? row[match.Key] : string.Empty;
+    }
+
+    private static string ReadPrimaryMappedValue(string[] row, CsvImportMapping mapping, CsvFieldType primaryFieldType, CsvFieldType legacyFieldType)
+    {
+        var value = ReadMappedValue(row, mapping, primaryFieldType);
+        return string.IsNullOrWhiteSpace(value) ? ReadMappedValue(row, mapping, legacyFieldType) : value;
     }
 
     private static string NormalizeLevelName(string rawValue, string prefix)

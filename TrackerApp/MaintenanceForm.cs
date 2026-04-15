@@ -20,7 +20,7 @@ public sealed class MaintenanceForm : Form
         ClientSize = new Size(1000, 720);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
         BuildLayout();
         UiLayoutHelper.ApplyRecursive(this);
@@ -111,7 +111,6 @@ public sealed class MaintenanceForm : Form
         _reportTextBox.ScrollBars = ScrollBars.Both;
         _reportTextBox.BackColor = Color.White;
         _reportTextBox.BorderStyle = BorderStyle.FixedSingle;
-        _reportTextBox.RightToLeft = RightToLeft.Yes;
         _reportTextBox.Font = new Font("Microsoft Sans Serif", 9.5F, FontStyle.Regular);
 
         root.Controls.Add(summaryGrid, 0, 0);
@@ -241,7 +240,6 @@ public sealed class MaintenanceForm : Form
             FlatStyle = FlatStyle.Standard
         };
         UiLayoutHelper.StyleActionButton(button, minWidth, 44);
-        button.RightToLeft = RightToLeft.Yes;
         button.TextAlign = ContentAlignment.MiddleRight;
         button.Padding = new Padding(16, 6, 22, 6);
         button.Click += onClick;

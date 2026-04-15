@@ -15,7 +15,7 @@ public sealed class DifficultySelectionForm : Form
         ClientSize = new Size(380, 156);
         BackColor = ClassicPalette.PanelBackground;
         RightToLeft = RightToLeft.Yes;
-        RightToLeftLayout = false;
+        RightToLeftLayout = true;
         UiLayoutHelper.ApplyFormDefaults(this);
         BuildLayout();
         UiLayoutHelper.ApplyRecursive(this);
@@ -31,7 +31,8 @@ public sealed class DifficultySelectionForm : Form
             Dock = DockStyle.Fill,
             ColumnCount = 2,
             RowCount = 2,
-            Padding = new Padding(12)
+            Padding = new Padding(12),
+            RightToLeft = RightToLeft.Yes
         };
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 90F));
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100F));
